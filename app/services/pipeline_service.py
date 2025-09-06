@@ -1,9 +1,13 @@
-from typing import List, Tuple
+from typing import List, Tuple, TYPE_CHECKING
 import numpy as np
 import structlog
 
-from app.services.detection_service import DetectionService
-from app.services.recognition_service import RecognitionService
+# NOTE: Defer heavy service imports to runtime to avoid ImportError masking due to import-time failures
+# (e.g., missing CUDA libs, model weights, or optional deps). Use TYPE_CHECKING for hints only.
+if TYPE_CHECKING:  # pragma: no cover
+    from app.services.detection_service import DetectionService  # noqa: F401
+    from app.services.recognition_service import RecognitionService  # noqa: F401
+
 from app.utils.image_processing import (
     crop_boxes_from_image,
     make_box_from_poly,
@@ -20,11 +24,34 @@ class PipelineService:
     that Celery tasks will call.
     """
     def __init__(self, config: dict):
-        self.detection_service = DetectionService(config['detection'])
-        self.recognition_service = RecognitionService(config['recognition'])
+        # Keep original config for possible lazy initializations
+        self._config = config
+
+        # Load detection service immediately (needed for detection tasks)
+        try:
+            from app.services.detection_service import DetectionService as _DetectionService  # local import
+            self.detection_service = _DetectionService(config['detection'])
+        except Exception as e:
+            logger.critical("pipeline_service.detection_init_failed", error=str(e), exc_info=True)
+            raise
+
+        # Recognition can be heavy; initialize lazily on first use
         pipeline_config = config.get('pipeline', {})
         self.enable_recognition = pipeline_config.get('enable_recognition', True)
+        self.recognition_service = None  # type: ignore[assignment]
         logger.info("pipeline_service.initialized", recognition_enabled=self.enable_recognition)
+
+    def _ensure_recognition_loaded(self):
+        if not self.enable_recognition:
+            return
+        if self.recognition_service is None:
+            try:
+                from app.services.recognition_service import RecognitionService as _RecognitionService  # local import
+                self.recognition_service = _RecognitionService(self._config['recognition'])
+                logger.info("pipeline_service.recognition_loaded")
+            except Exception as e:
+                logger.critical("pipeline_service.recognition_init_failed", error=str(e), exc_info=True)
+                raise
 
     def detect_lines(self, image: np.ndarray) -> List[list]:
         """Detects all line bounding boxes in a single image."""
@@ -45,6 +72,10 @@ class PipelineService:
         """
         if not self.enable_recognition:
             return ("[RECOGNITION DISABLED]", 0.0)
+
+        # Lazy-load recognition only when needed
+        self._ensure_recognition_loaded()
+        assert self.recognition_service is not None  # for type checkers
         
         line_crops = crop_boxes_from_image(line_boxes, image)
         text_of_lines = []
@@ -69,7 +100,8 @@ class PipelineService:
         ]
         
         all_word_crops = [item['crop'] for item in word_data]
-        word_texts_with_probs = self.recognition_service(all_word_crops)
+        # Recognition is ensured to be loaded by recognize_page
+        word_texts_with_probs = self.recognition_service(all_word_crops)  # type: ignore[misc]
 
         for i, item in enumerate(word_data):
             item['text'], item['prob'] = word_texts_with_probs[i]

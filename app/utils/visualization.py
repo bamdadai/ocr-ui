@@ -7,7 +7,7 @@ such as drawing on images or saving debug plots.
 
 import uuid
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Tuple, Sequence, Union
 
 import cv2
 import numpy as np
@@ -18,19 +18,54 @@ from .common import batchify
 from .text_processing import make_farsi_text_for_display
 
 
-def draw_boxes(image: np.ndarray, boxes: List[List[int]], color: Tuple[int, int, int] = (0, 255, 0), thickness: int = 2) -> np.ndarray:
-    """Draws multiple bounding boxes on an image."""
+def draw_boxes(image: np.ndarray, boxes: Sequence[Sequence[Union[int, float]]], color: Tuple[int, int, int] = (0, 255, 0), thickness: int = 2) -> np.ndarray:
+    """Draws multiple bounding boxes on an image.
+    - Accepts boxes in [x1, y1, x2, y2] format
+    - Also accepts flat polygons (even-length lists), for which a bounding rectangle is drawn
+    - Silently skips invalid entries
+    """
+    if not boxes:
+        return image
+
     for box in boxes:
-        x1, y1, x2, y2 = map(int, box)
-        cv2.rectangle(image, (x1, y1), (x2, y2), color, thickness)
+        try:
+            arr = np.asarray(box).reshape(-1)
+            if arr.size < 4:
+                continue
+            if arr.size == 4:
+                x1, y1, x2, y2 = map(int, arr.tolist())
+            elif arr.size % 2 == 0:
+                xs = arr[0::2]
+                ys = arr[1::2]
+                x1, y1, x2, y2 = int(np.min(xs)), int(np.min(ys)), int(np.max(xs)), int(np.max(ys))
+            else:
+                # Unknown layout (e.g., rotated boxes with angle). Best-effort: take first 4 as xyxy
+                x1, y1, x2, y2 = map(int, arr[:4].tolist())
+
+            cv2.rectangle(image, (x1, y1), (x2, y2), color, thickness)
+        except Exception:
+            # Skip malformed box without interrupting debug flow
+            continue
     return image
 
 
-def draw_polygons(image: np.ndarray, polygons: List[List[int]], color: Tuple[int, int, int] = (0, 255, 0), thickness: int = 2) -> np.ndarray:
-    """Draws multiple polygons on an image."""
+def draw_polygons(image: np.ndarray, polygons: Sequence[Sequence[Union[int, float]]], color: Tuple[int, int, int] = (0, 255, 0), thickness: int = 2) -> np.ndarray:
+    """Draws multiple polygons on an image.
+    - Expects each polygon as a flat list of coordinates [x1, y1, x2, y2, ...]
+    - Skips polygons with odd number of coordinates or fewer than 6 values
+    """
+    if not polygons:
+        return image
+
     for poly in polygons:
-        pts = np.array(poly, dtype=np.int32).reshape((-1, 1, 2))
-        cv2.polylines(image, [pts], isClosed=True, color=color, thickness=thickness)
+        try:
+            flat = np.asarray(poly).reshape(-1)
+            if flat.size < 6 or (flat.size % 2) != 0:
+                continue
+            pts = flat.astype(np.int32).reshape((-1, 1, 2))
+            cv2.polylines(image, [pts], isClosed=True, color=color, thickness=thickness)
+        except Exception:
+            continue
     return image
 
 

@@ -1,0 +1,19 @@
+# Ignore everything except requirements for requirements install layer
+app/
+assets/
+static/
+templates/
+master_config.json
+*.py
+*.md
+*.sh
+weights/
+temp_files/
+tests/
+env_ocr/
+docker-compose.yml
+Dockerfile
+.env
+.git
+.gitignore
+!requirements/

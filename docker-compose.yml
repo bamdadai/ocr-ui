@@ -72,6 +72,8 @@ services:
     ports:
       - "8000:8084"
     env_file: .env
+    environment:
+      - PYTHONPATH=/home/appuser
     volumes:
       - app_logs:/home/appuser/logs # Mount logs volume
     depends_on:
@@ -95,18 +97,23 @@ services:
         REQ_FILE: requirements/worker.txt # Build the full worker image
     container_name: ocr_worker_pipeline
     user: root # <-- ADDED
-    command: celery -A app.worker.celery_app worker -l info -Q ocr_pipeline -c 1
+    command: python -m celery -A app.worker.celery_app worker -l info -Q ocr_pipeline -c 1
     env_file: .env
+    environment:
+      - PYTHONPATH=/home/appuser
     volumes:
-      # Use direct bind mounts for local files. ':ro' makes them read-only for safety.
       - ./weights:/home/appuser/weights:ro
       - ./temp_files:/home/appuser/temp_files
       - app_logs:/home/appuser/logs        # For logs
+    gpus: all
     deploy:
       resources:
         limits: { cpus: '4.0', memory: 14G }
-        # reservations:
-        #   devices: [{ driver: nvidia, count: 1, capabilities: [gpu] }]
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     depends_on:
       redis: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
@@ -123,8 +130,10 @@ services:
         REQ_FILE: requirements/worker.txt
     container_name: ocr_worker_dispatch
     user: root # <-- ADDED
-    command: celery -A app.worker.celery_app worker -l info -Q dispatch -c 4
+    command: python -m celery -A app.worker.celery_app worker -l info -Q dispatch -c 4
     env_file: .env
+    environment:
+      - PYTHONPATH=/home/appuser
     volumes:
       - temp_files:/home/appuser/temp_files
       - app_logs:/home/appuser/logs
@@ -145,8 +154,10 @@ services:
         REQ_FILE: requirements/worker.txt
     container_name: ocr_worker_webhooks
     user: root # <-- ADDED
-    command: celery -A app.worker.celery_app worker -l info -Q webhooks -c 4
+    command: python -m celery -A app.worker.celery_app worker -l info -Q webhooks -c 4
     env_file: .env
+    environment:
+      - PYTHONPATH=/home/appuser
     volumes:
       - app_logs:/home/appuser/logs
     deploy:
@@ -155,3 +166,4 @@ services:
     depends_on: [redis, rabbitmq]
     networks:
       - ocr_network
+

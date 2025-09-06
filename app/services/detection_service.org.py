@@ -5,7 +5,7 @@ import torch
 import structlog
 import time
 import os
-from typing import List, Callable, Dict, Any, Literal, Optional, Sequence
+from typing import List, Callable, Dict, Any, Literal
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from ultralytics import YOLO
@@ -36,12 +36,6 @@ class DetectionService:
         self.model_params = {
             'word': {'iou': config['word_detect']['iou'], 'conf': config['word_detect']['conf'], 'task': 'segment', 'retina_masks': True},
             'line': {'iou': config['line_detect']['iou'], 'conf': config['line_detect']['conf']}
-        }
-        # Optional target classes for filtering; can be int ids or class names
-        # If omitted, we do NOT filter by class to avoid dropping valid detections
-        self.target_classes: Dict[ModelType, Optional[Sequence[int | str]]] = {
-            'word': config['word_detect'].get('classes'),
-            'line': config['line_detect'].get('classes')
         }
         self.post_process_funcs = {
             'word': self._post_process_word_results,
@@ -100,53 +94,9 @@ class DetectionService:
             model_params=self.model_params[model_type],
             post_process_func=self.post_process_funcs[model_type],
             debug_path=self.debug_info[model_type]['path'],
-            debug_draw_func=self.debug_info[model_type]['draw_func'],
-            model_type=model_type
+            debug_draw_func=self.debug_info[model_type]['draw_func']
         )
         return self._process_in_optimal_batches(images, processor_function)
-
-    def _resolve_allowed_class_ids(self, results: Results, model_type: ModelType) -> Optional[List[int]]:
-        """Resolve configured target classes (ids or names) to numeric class ids present in results."""
-        targets = self.target_classes.get(model_type)
-        if not targets:
-            return None
-        # map names->ids if needed using results.names
-        name_to_id = getattr(results, 'names', None)
-        resolved: List[int] = []
-        for t in targets:
-            if isinstance(t, int):
-                resolved.append(t)
-            elif isinstance(t, str) and name_to_id is not None:
-                # name_to_id can be dict[int,str] or list
-                if isinstance(name_to_id, dict):
-                    for cid, cname in name_to_id.items():
-                        if cname == t:
-                            resolved.append(int(cid))
-                elif isinstance(name_to_id, list):
-                    if t in name_to_id:
-                        resolved.append(name_to_id.index(t))
-        # de-duplicate
-        return list(sorted(set(resolved))) if resolved else None
-
-    def _filter_by_classes(self, results: Results, model_type: ModelType) -> Results:
-        """Optionally filter detections by configured classes. If not configured, return unchanged."""
-        try:
-            if results.boxes is None or results.boxes.cls is None:
-                return results
-            allowed = self._resolve_allowed_class_ids(results, model_type)
-            if not allowed:
-                # No filtering configured; keep all detections
-                return results
-            cls_tensor = results.boxes.cls
-            mask = torch.zeros_like(cls_tensor, dtype=torch.bool)
-            for cid in allowed:
-                mask |= (cls_tensor == cid)
-            filtered = results[mask]
-            logger.info("detection_service.class_filter", model_type=model_type, kept=int(mask.sum().item()), total=len(cls_tensor))
-            return filtered
-        except Exception as e:
-            logger.warning("detection_service.class_filter_failed", model_type=model_type, error=str(e))
-            return results
 
     def _execute_single_image_prediction(
         self, 
@@ -155,16 +105,14 @@ class DetectionService:
         model_params: Dict, 
         post_process_func: Callable,
         debug_path: str,
-        debug_draw_func: Callable,
-        model_type: ModelType
+        debug_draw_func: Callable
     ) -> List:
         """
         Executes prediction on a single image with explicit parameters for clarity.
         """
         with torch.no_grad():
             results = model([image], verbose=False, device=self.device, batch=1, **model_params)[0]
-            # Remove hard-coded filtering; only filter if configured
-            results = self._filter_by_classes(results, model_type)
+            results = results[results.boxes.cls == 0]
             processed_output = post_process_func(results)
             
             if self.debug and processed_output:
@@ -233,4 +181,3 @@ class DetectionService:
                 logger.error("detection_service.batch.error", image_index=i, error=str(e), exc_info=True)
                 results.append([])
         return results
-

@@ -8,30 +8,53 @@ import requests
 import structlog
 from celery import chain, group, chord
 from requests.exceptions import RequestException
+from typing import TYPE_CHECKING
+import sys
 
 from app.core.config import settings
-from app.services.pipeline_service import PipelineService
+# DEFER heavy import to runtime to avoid ImportError in lightweight workers
+# from app.services.pipeline_service import PipelineService
 from app.utils.file_io import pdf_to_images
 from app.worker.celery_app import app
 from app.worker.state_manager import StateManager
 from app.core.logging import correlation_id_var
 
+if TYPE_CHECKING:
+    # Only for type checkers; not executed at runtime
+    from ...services.pipeline_service import PipelineService
+
 logger = structlog.get_logger(__name__)
 
 # --- Lazy Loading and Micro-tasks (These remain unchanged) ---
 
-pipeline_singleton: PipelineService | None = None
+pipeline_singleton: 'PipelineService | None' = None
 
-def get_pipeline_service() -> PipelineService:
+def get_pipeline_service() -> 'PipelineService':
     global pipeline_singleton
     if pipeline_singleton is None:
         logger.info("lazy_loading.pipeline_service.initializing")
         try:
-            pipeline_singleton = PipelineService(settings.model_dump())
-            logger.info("lazy_loading.pipeline_service.success")
+            # Prefer absolute import first
+            from app.services.pipeline_service import PipelineService  # type: ignore
+        except ModuleNotFoundError as e_abs:
+            # Fallback to package-relative import in case of sys.path/module shadowing issues
+            logger.warning(
+                "lazy_loading.pipeline_service.abs_import_failed",
+                error=str(e_abs), sys_path=list(sys.path)
+            )
+            try:
+                from ...services.pipeline_service import PipelineService  # type: ignore
+            except Exception as e_rel:
+                logger.critical(
+                    "lazy_loading.pipeline_service.failed",
+                    error=str(e_rel), sys_path=list(sys.path), exc_info=True
+                )
+                raise
         except Exception as e:
-            logger.critical("lazy_loading.pipeline_service.failed", error=str(e), exc_info=True)
+            logger.critical("lazy_loading.pipeline_service.failed", error=str(e), sys_path=list(sys.path), exc_info=True)
             raise
+        pipeline_singleton = PipelineService(settings.model_dump())
+        logger.info("lazy_loading.pipeline_service.success")
     return pipeline_singleton
 
 @app.task(name="ocr.pipeline.detect_lines", acks_late=True, bind=True)
