@@ -2,13 +2,11 @@
 # Final, Production-Ready docker-compose.yml
 # ====================================================================
 
-# --- Top-Level Definitions for Networks and Volumes ---
 networks:
   ocr_network:
     driver: bridge
     name: ocr_production_network
 
-# Use named volumes for persistent data, which is a best practice.
 volumes:
   redis_data:
   rabbitmq_data:
@@ -33,6 +31,7 @@ services:
   redis:
     image: redis:7.2-alpine
     container_name: ocr_redis
+    restart: unless-stopped
     volumes:
       - redis_data:/data
     networks:
@@ -44,6 +43,7 @@ services:
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
     container_name: ocr_rabbitmq
+    restart: unless-stopped
     ports:
       - "15672:15672"
     volumes:
@@ -65,9 +65,10 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        REQ_FILE: requirements/api.txt # Build a lightweight API image
+        REQ_FILE: requirements/api.txt
     container_name: ocr_api
-    user: root # <-- ADDED
+    restart: unless-stopped
+    user: root
     command: gunicorn -w 4 -k uvicorn.workers.UvicornWorker app.main:app --bind 0.0.0.0:8084
     ports:
       - "8000:8084"
@@ -75,7 +76,7 @@ services:
     environment:
       - PYTHONPATH=/home/appuser
     volumes:
-      - app_logs:/home/appuser/logs # Mount logs volume
+      - app_logs:/home/appuser/logs
     depends_on:
       redis: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
@@ -84,19 +85,17 @@ services:
 
   # ===================================
   # Specialized Celery Workers
-  # Based on task routing in celery_app.py
   # ===================================
 
-  # 1. Pipeline Worker (Heavy-Duty)
-  #    Processes the main OCR tasks. High CPU/Memory, low concurrency.
   worker_pipeline:
     build:
       context: .
       dockerfile: Dockerfile
       args:
-        REQ_FILE: requirements/worker.txt # Build the full worker image
+        REQ_FILE: requirements/worker.txt
     container_name: ocr_worker_pipeline
-    user: root # <-- ADDED
+    restart: unless-stopped
+    user: root
     command: python -m celery -A app.worker.celery_app worker -l info -Q ocr_pipeline -c 1
     env_file: .env
     environment:
@@ -104,7 +103,7 @@ services:
     volumes:
       - ./weights:/home/appuser/weights:ro
       - ./temp_files:/home/appuser/temp_files
-      - app_logs:/home/appuser/logs        # For logs
+      - app_logs:/home/appuser/logs
     gpus: all
     deploy:
       resources:
@@ -120,8 +119,6 @@ services:
     networks:
       - ocr_network
 
-  # 2. Dispatch Worker (Lightweight)
-  #    Handles initial task creation. Low CPU/Memory, high concurrency.
   worker_dispatch:
     build:
       context: .
@@ -129,7 +126,8 @@ services:
       args:
         REQ_FILE: requirements/worker.txt
     container_name: ocr_worker_dispatch
-    user: root # <-- ADDED
+    restart: unless-stopped
+    user: root
     command: python -m celery -A app.worker.celery_app worker -l info -Q dispatch -c 4
     env_file: .env
     environment:
@@ -144,8 +142,6 @@ services:
     networks:
       - ocr_network
 
-  # 3. Webhook Worker (I/O Bound)
-  #    Only sends network requests. Very low CPU, very high concurrency.
   worker_webhooks:
     build:
       context: .
@@ -153,7 +149,8 @@ services:
       args:
         REQ_FILE: requirements/worker.txt
     container_name: ocr_worker_webhooks
-    user: root # <-- ADDED
+    restart: unless-stopped
+    user: root
     command: python -m celery -A app.worker.celery_app worker -l info -Q webhooks -c 4
     env_file: .env
     environment:
@@ -166,4 +163,3 @@ services:
     depends_on: [redis, rabbitmq]
     networks:
       - ocr_network
-

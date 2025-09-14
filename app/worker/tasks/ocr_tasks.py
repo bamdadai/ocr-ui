@@ -10,7 +10,6 @@ from celery import chain, group, chord
 from requests.exceptions import RequestException
 from typing import TYPE_CHECKING
 import sys
-
 from app.core.config import settings
 # DEFER heavy import to runtime to avoid ImportError in lightweight workers
 # from app.services.pipeline_service import PipelineService
@@ -18,6 +17,7 @@ from app.utils.file_io import pdf_to_images
 from app.worker.celery_app import app
 from app.worker.state_manager import StateManager
 from app.core.logging import correlation_id_var
+from app.utils.orientation import correct_images  # NEW
 
 if TYPE_CHECKING:
     # Only for type checkers; not executed at runtime
@@ -36,14 +36,16 @@ def get_pipeline_service() -> 'PipelineService':
         try:
             # Prefer absolute import first
             from app.services.pipeline_service import PipelineService  # type: ignore
-        except ModuleNotFoundError as e_abs:
-            # Fallback to package-relative import in case of sys.path/module shadowing issues
+            logger.info("lazy_loading.pipeline_service.import_ok", origin=str(PipelineService.__module__))
+        except (ModuleNotFoundError, ImportError) as e_abs:
+            # Fallback to package-relative import in case of sys.path/module shadowing issues OR name import errors
             logger.warning(
                 "lazy_loading.pipeline_service.abs_import_failed",
                 error=str(e_abs), sys_path=list(sys.path)
             )
             try:
                 from ...services.pipeline_service import PipelineService  # type: ignore
+                logger.info("lazy_loading.pipeline_service.import_ok", origin=str(PipelineService.__module__))
             except Exception as e_rel:
                 logger.critical(
                     "lazy_loading.pipeline_service.failed",
@@ -125,6 +127,9 @@ def process_ocr_task(self, file_content: bytes, metadata: dict, webhook_url: str
             if decoded_image is None:
                 raise ValueError("Failed to decode file as an image. The file may be corrupt or in an unsupported format.")
             images = [decoded_image]
+
+        # NEW: Rotate images upright ONCE at the ingestion stage, so all downstream coordinates match
+        images = correct_images(images)
 
         state = StateManager(request_id)
         state.save_initial_images(images)

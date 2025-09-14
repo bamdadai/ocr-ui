@@ -1,6 +1,7 @@
 from typing import List, Tuple, TYPE_CHECKING
 import numpy as np
 import structlog
+# removed unused imports: cv2, Path, YOLO
 
 # NOTE: Defer heavy service imports to runtime to avoid ImportError masking due to import-time failures
 # (e.g., missing CUDA libs, model weights, or optional deps). Use TYPE_CHECKING for hints only.
@@ -39,7 +40,28 @@ class PipelineService:
         pipeline_config = config.get('pipeline', {})
         self.enable_recognition = pipeline_config.get('enable_recognition', True)
         self.recognition_service = None  # type: ignore[assignment]
-        logger.info("pipeline_service.initialized", recognition_enabled=self.enable_recognition)
+
+        # Orientation is now handled once at ingestion by tasks.process_ocr_task
+        # Keep flags for logging/telemetry only
+        orientation_cfg = (
+            config.get('orientation')
+            or pipeline_config.get('orientation')
+            or {}
+        )
+        self.orientation_enabled: bool = bool(
+            orientation_cfg.get('enabled', pipeline_config.get('orientation_enabled', False))
+        )
+        self.orientation_device: str = str(
+            orientation_cfg.get('device', config.get('detection', {}).get('device', 'cpu'))
+        )
+        self.orientation_imgsz: int = int(orientation_cfg.get('imgsz', 224))
+
+        logger.info(
+            "pipeline_service.initialized",
+            recognition_enabled=self.enable_recognition,
+            orientation_enabled=self.orientation_enabled,
+            orientation_device=self.orientation_device if self.orientation_enabled else None,
+        )
 
     def _ensure_recognition_loaded(self):
         if not self.enable_recognition:
@@ -55,6 +77,7 @@ class PipelineService:
 
     def detect_lines(self, image: np.ndarray) -> List[list]:
         """Detects all line bounding boxes in a single image."""
+        # Image is already oriented at ingestion; don't rotate here
         line_boxes = self.detection_service.predict_line_boxes([image])['line_boxes'][0]
         # Sort lines top-to-bottom for correct reading order.
         return sorted(line_boxes, key=lambda box: box[1])
@@ -63,6 +86,7 @@ class PipelineService:
         """Detects all word polygons within the given line boxes for an image."""
         if not line_boxes:
             return []
+        # Image is already oriented at ingestion; don't rotate here
         line_crops = crop_boxes_from_image(line_boxes, image)
         return self.detection_service.predict_word_polygons(line_crops)['word_polygons']
 
@@ -76,7 +100,8 @@ class PipelineService:
         # Lazy-load recognition only when needed
         self._ensure_recognition_loaded()
         assert self.recognition_service is not None  # for type checkers
-        
+
+        # Image is already oriented at ingestion; don't rotate here
         line_crops = crop_boxes_from_image(line_boxes, image)
         text_of_lines = []
 

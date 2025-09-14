@@ -1,7 +1,7 @@
 import json
 import os
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from pydantic import BaseModel, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -37,10 +37,19 @@ class RecognitionConfig(BaseModel):
     debug: bool
     debug_font_path: Path = PROJECT_ROOT / "assets/fonts/XB_Niloofar.ttf"
 
+class OrientationConfig(BaseModel):
+    """Settings for optional orientation (rotation) correction using a classification model."""
+    enabled: bool = False
+    path: Optional[str] = None  # path to YOLO-cls .pt
+    device: Optional[str] = None  # if None, fallback to detection.device
+    imgsz: int = 224
+
 class PipelineConfig(BaseModel):
     """General settings for the OCR pipeline."""
     debug: bool
     enable_recognition: bool
+    # Allow nesting orientation config under pipeline as well (optional)
+    orientation: Optional[OrientationConfig] = None
 
 # --- Main Application Settings Class ---
 
@@ -69,9 +78,11 @@ class Settings(BaseSettings):
     detection: DetectionConfig
     recognition: RecognitionConfig
     pipeline: PipelineConfig
+    # Support top-level orientation configuration as well (optional)
+    orientation: Optional[OrientationConfig] = None
     valid_ocr_formats: List[str]
 
-    @field_validator("detection", "recognition", mode='before')
+    @field_validator("detection", "recognition", "orientation", mode='before')
     @classmethod
     def resolve_paths_in_config(cls, v: Any) -> Any:
         """
@@ -137,3 +148,4 @@ def setup_directories():
 
 # Run the function to create directories when the module is imported
 setup_directories()
+
