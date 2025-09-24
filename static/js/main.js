@@ -304,6 +304,10 @@ document.addEventListener('DOMContentLoaded', () => {
         let pointY = 0;
         let start = { x: 0, y: 0 };
         
+        // Initialize positioning
+        pointX = 0;
+        pointY = 0;
+        
         // Update zoom level display
         function updateZoomLevel() {
             zoomLevel.textContent = Math.round(scale * 100) + '%';
@@ -316,13 +320,33 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Zoom functions
         function zoomIn() {
-            scale = Math.min(scale * 1.2, 5); // Max 500% zoom
+            const containerRect = container.getBoundingClientRect();
+            const centerX = containerRect.width / 2;
+            const centerY = containerRect.height / 2;
+            
+            const newScale = Math.min(scale * 1.2, 5);
+            const ratio = newScale / scale;
+            
+            pointX = centerX - (centerX - pointX) * ratio;
+            pointY = centerY - (centerY - pointY) * ratio;
+            scale = newScale;
+            
             setTransform();
             updateZoomLevel();
         }
         
         function zoomOut() {
-            scale = Math.max(scale / 1.2, 0.1); // Min 10% zoom
+            const containerRect = container.getBoundingClientRect();
+            const centerX = containerRect.width / 2;
+            const centerY = containerRect.height / 2;
+            
+            const newScale = Math.max(scale / 1.2, 0.5);
+            const ratio = newScale / scale;
+            
+            pointX = centerX - (centerX - pointX) * ratio;
+            pointY = centerY - (centerY - pointY) * ratio;
+            scale = newScale;
+            
             setTransform();
             updateZoomLevel();
         }
@@ -340,25 +364,29 @@ document.addEventListener('DOMContentLoaded', () => {
         zoomOutBtn.addEventListener('click', zoomOut);
         resetBtn.addEventListener('click', resetZoom);
         
-        // Mouse wheel zoom
+        // Mouse wheel zoom - zoom toward cursor position
         container.addEventListener('wheel', function(e) {
             e.preventDefault();
             
-            const rect = container.getBoundingClientRect();
-            const offsetX = e.clientX - rect.left;
-            const offsetY = e.clientY - rect.top;
+            const containerRect = container.getBoundingClientRect();
+            const imgRect = img.getBoundingClientRect();
             
-            const dx = (offsetX - pointX) / scale;
-            const dy = (offsetY - pointY) / scale;
+            // Mouse position relative to container
+            const mouseX = e.clientX - containerRect.left;
+            const mouseY = e.clientY - containerRect.top;
             
-            if (e.deltaY < 0) {
-                scale = Math.min(scale * 1.1, 5);
-            } else {
-                scale = Math.max(scale / 1.1, 0.1);
-            }
+            // Mouse position relative to image
+            const imageMouseX = (mouseX - pointX) / scale;
+            const imageMouseY = (mouseY - pointY) / scale;
             
-            pointX = offsetX - dx * scale;
-            pointY = offsetY - dy * scale;
+            const oldScale = scale;
+            scale = e.deltaY < 0 ? 
+                Math.min(scale * 1.1, 5) : 
+                Math.max(scale / 1.1, 0.5);
+            
+            // Adjust position to zoom toward mouse cursor
+            pointX = mouseX - imageMouseX * scale;
+            pointY = mouseY - imageMouseY * scale;
             
             setTransform();
             updateZoomLevel();
@@ -386,6 +414,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         
         // Initialize
+        setTransform();
         updateZoomLevel();
         img.style.cursor = 'default';
     }

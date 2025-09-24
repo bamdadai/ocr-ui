@@ -661,17 +661,21 @@ body::before {
     display: flex;
     align-items: center;
     justify-content: center;
-    min-height: 400px;
     max-height: calc(90vh - 140px);
+    padding: 10px;
 }
 
 .zoomable-image {
-    max-width: 100%;
-    max-height: 100%;
+    width: auto;
+    height: auto;
+    max-width: 95%;
+    max-height: 95%;
     transition: transform 0.1s ease;
-    transform-origin: center center;
+    transform-origin: 0 0;
     user-select: none;
     -webkit-user-drag: none;
+    object-fit: contain;
+    display: block;
 }
 
 .zoomable-image:hover {
