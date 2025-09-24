@@ -179,27 +179,26 @@ document.addEventListener('DOMContentLoaded', () => {
         // Use the new, robust decoding function
         const decodedText = decodeBase64Utf8(result.text);
 
+        // Show a simple notification
+        showNotification('عملیات با موفقیت انجام شد', 'success');
+
         resultCard.innerHTML = `
-            <div class="d-flex justify-content-between align-items-center mb-4">
-                <h3 class="mb-0">
-                    <i class="fas fa-check-circle text-success ms-2"></i>
-                    پردازش با موفقیت انجام شد
-                </h3>
-                <button type="button" class="btn btn-outline-primary" onclick="previewOriginalImage()">
-                    <i class="fas fa-image ms-2"></i>
-                    مشاهده تصویر اصلی
-                </button>
-            </div>
             <div class="result-text-container">
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <h5 class="mb-0 text-muted">
                         <i class="fas fa-file-text ms-2"></i>
                         متن استخراج شده
                     </h5>
-                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="copyToClipboard()">
-                        <i class="fas fa-copy ms-1"></i>
-                        کپی متن
-                    </button>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="previewOriginalImage()">
+                            <i class="fas fa-image ms-1"></i>
+                            مشاهده تصویر اصلی
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="copyToClipboard()">
+                            <i class="fas fa-copy ms-1"></i>
+                            کپی متن
+                        </button>
+                    </div>
                 </div>
                 <pre class="ocr-text" id="extracted-text">${decodedText}</pre>
             </div>
@@ -229,21 +228,36 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Create and show modal
+        // Create and show modal with zoom functionality
         const modal = document.createElement('div');
         modal.className = 'modal fade';
         modal.id = 'imagePreviewModal';
         modal.innerHTML = `
-            <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-dialog modal-xl modal-dialog-centered">
                 <div class="modal-content">
                     <div class="modal-header">
                         <h5 class="modal-title">تصویر اصلی</h5>
+                        <div class="zoom-controls">
+                            <button type="button" class="btn btn-outline-primary btn-sm" id="zoomOut">
+                                <i class="fas fa-search-minus"></i>
+                            </button>
+                            <span class="zoom-level">100%</span>
+                            <button type="button" class="btn btn-outline-primary btn-sm" id="zoomIn">
+                                <i class="fas fa-search-plus"></i>
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" id="resetZoom">
+                                <i class="fas fa-undo"></i>
+                            </button>
+                        </div>
                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
-                    <div class="modal-body text-center">
-                        <img id="previewImage" class="img-fluid" style="max-height: 70vh;" alt="تصویر اصلی">
+                    <div class="modal-body p-0">
+                        <div class="image-container" id="imageContainer">
+                            <img id="previewImage" class="zoomable-image" alt="تصویر اصلی">
+                        </div>
                     </div>
                     <div class="modal-footer">
+                        <small class="text-muted me-auto">برای زوم از چرخ ماوس استفاده کنید</small>
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">بستن</button>
                     </div>
                 </div>
@@ -255,7 +269,13 @@ document.addEventListener('DOMContentLoaded', () => {
         // Load the image
         const reader = new FileReader();
         reader.onload = function(e) {
-            document.getElementById('previewImage').src = e.target.result;
+            const img = document.getElementById('previewImage');
+            img.src = e.target.result;
+            
+            // Initialize zoom functionality after image loads
+            img.onload = function() {
+                initializeImageZoom();
+            };
         };
         reader.readAsDataURL(currentUploadedFile);
         
@@ -267,6 +287,107 @@ document.addEventListener('DOMContentLoaded', () => {
         modal.addEventListener('hidden.bs.modal', function() {
             document.body.removeChild(modal);
         });
+    }
+
+    // Image zoom functionality
+    function initializeImageZoom() {
+        const img = document.getElementById('previewImage');
+        const container = document.getElementById('imageContainer');
+        const zoomInBtn = document.getElementById('zoomIn');
+        const zoomOutBtn = document.getElementById('zoomOut');
+        const resetBtn = document.getElementById('resetZoom');
+        const zoomLevel = document.querySelector('.zoom-level');
+        
+        let scale = 1;
+        let panning = false;
+        let pointX = 0;
+        let pointY = 0;
+        let start = { x: 0, y: 0 };
+        
+        // Update zoom level display
+        function updateZoomLevel() {
+            zoomLevel.textContent = Math.round(scale * 100) + '%';
+        }
+        
+        // Apply transform to image
+        function setTransform() {
+            img.style.transform = `translate(${pointX}px, ${pointY}px) scale(${scale})`;
+        }
+        
+        // Zoom functions
+        function zoomIn() {
+            scale = Math.min(scale * 1.2, 5); // Max 500% zoom
+            setTransform();
+            updateZoomLevel();
+        }
+        
+        function zoomOut() {
+            scale = Math.max(scale / 1.2, 0.1); // Min 10% zoom
+            setTransform();
+            updateZoomLevel();
+        }
+        
+        function resetZoom() {
+            scale = 1;
+            pointX = 0;
+            pointY = 0;
+            setTransform();
+            updateZoomLevel();
+        }
+        
+        // Event listeners for zoom controls
+        zoomInBtn.addEventListener('click', zoomIn);
+        zoomOutBtn.addEventListener('click', zoomOut);
+        resetBtn.addEventListener('click', resetZoom);
+        
+        // Mouse wheel zoom
+        container.addEventListener('wheel', function(e) {
+            e.preventDefault();
+            
+            const rect = container.getBoundingClientRect();
+            const offsetX = e.clientX - rect.left;
+            const offsetY = e.clientY - rect.top;
+            
+            const dx = (offsetX - pointX) / scale;
+            const dy = (offsetY - pointY) / scale;
+            
+            if (e.deltaY < 0) {
+                scale = Math.min(scale * 1.1, 5);
+            } else {
+                scale = Math.max(scale / 1.1, 0.1);
+            }
+            
+            pointX = offsetX - dx * scale;
+            pointY = offsetY - dy * scale;
+            
+            setTransform();
+            updateZoomLevel();
+        });
+        
+        // Pan functionality
+        img.addEventListener('mousedown', function(e) {
+            e.preventDefault();
+            start = { x: e.clientX - pointX, y: e.clientY - pointY };
+            panning = true;
+            img.style.cursor = 'grabbing';
+        });
+        
+        document.addEventListener('mousemove', function(e) {
+            if (!panning) return;
+            e.preventDefault();
+            pointX = e.clientX - start.x;
+            pointY = e.clientY - start.y;
+            setTransform();
+        });
+        
+        document.addEventListener('mouseup', function() {
+            panning = false;
+            img.style.cursor = scale > 1 ? 'grab' : 'default';
+        });
+        
+        // Initialize
+        updateZoomLevel();
+        img.style.cursor = 'default';
     }
 
     // Copy to clipboard function
@@ -326,5 +447,42 @@ document.addEventListener('DOMContentLoaded', () => {
                 copyBtn.classList.add('btn-outline-secondary');
             }, 2000);
         }
+    }
+
+    // Simple notification function
+    function showNotification(message, type = 'info') {
+        // Remove any existing notifications
+        const existingNotification = document.querySelector('.toast-notification');
+        if (existingNotification) {
+            existingNotification.remove();
+        }
+
+        // Create notification element
+        const notification = document.createElement('div');
+        notification.className = `toast-notification toast-${type}`;
+        notification.innerHTML = `
+            <div class="toast-content">
+                <i class="fas fa-check-circle"></i>
+                <span>${message}</span>
+            </div>
+        `;
+        
+        // Add to document
+        document.body.appendChild(notification);
+        
+        // Show with animation
+        setTimeout(() => {
+            notification.classList.add('show');
+        }, 100);
+        
+        // Auto remove after 3 seconds
+        setTimeout(() => {
+            notification.classList.remove('show');
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.parentNode.removeChild(notification);
+                }
+            }, 300);
+        }, 3000);
     }
 });

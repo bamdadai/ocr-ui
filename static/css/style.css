@@ -224,10 +224,16 @@ body::before {
 .file-item button {
     color: var(--error-color);
     transition: all 0.3s ease;
-    padding: 0.25rem;
+    padding: 0.5rem;
     border-radius: 50%;
     background: rgba(239, 68, 68, 0.1);
     border: 1px solid rgba(239, 68, 68, 0.2);
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 32px;
 }
 
 .file-item button:hover {
@@ -235,6 +241,11 @@ body::before {
     border-color: var(--error-color);
     transform: scale(1.1);
     color: #dc2626;
+}
+
+.file-item button i {
+    margin: 0 !important;
+    font-size: 0.9rem;
 }
 
 .result-card {
@@ -535,4 +546,172 @@ body::before {
     background: var(--text-muted) !important;
     color: white !important;
     border-color: var(--text-muted) !important;
+}
+
+/* Toast Notification Styles */
+.toast-notification {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    border-radius: 12px;
+    padding: 1rem 1.5rem;
+    box-shadow: var(--shadow-lg);
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    z-index: 1050;
+    transform: translateX(400px);
+    opacity: 0;
+    transition: all 0.3s ease;
+    min-width: 300px;
+    font-family: 'Vazirmatn', sans-serif;
+}
+
+.toast-notification.show {
+    transform: translateX(0);
+    opacity: 1;
+}
+
+.toast-notification.toast-success {
+    border-color: rgba(34, 197, 94, 0.3);
+}
+
+.toast-notification.toast-success .toast-content i {
+    color: var(--success-color);
+}
+
+.toast-content {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    color: var(--text-color);
+    font-weight: 500;
+}
+
+.toast-content i {
+    font-size: 1.2rem;
+}
+
+.toast-content span {
+    font-size: 0.95rem;
+}
+
+/* Button container utilities */
+.d-flex.gap-2 > * + * {
+    margin-right: 0.5rem;
+}
+
+/* Image Preview Modal with Zoom */
+.modal-xl {
+    max-width: 90vw;
+}
+
+.modal-content {
+    height: 90vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.modal-header {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 1.5rem;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.zoom-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 25px;
+    padding: 0.25rem 0.75rem;
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow-sm);
+}
+
+.zoom-controls .btn {
+    padding: 0.25rem 0.5rem;
+    border-radius: 50%;
+    border: 1px solid var(--primary-color);
+    min-width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.zoom-level {
+    font-weight: 600;
+    color: var(--text-color);
+    min-width: 45px;
+    text-align: center;
+    font-size: 0.85rem;
+}
+
+.image-container {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+    background: #f8f9fa;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 400px;
+    max-height: calc(90vh - 140px);
+}
+
+.zoomable-image {
+    max-width: 100%;
+    max-height: 100%;
+    transition: transform 0.1s ease;
+    transform-origin: center center;
+    user-select: none;
+    -webkit-user-drag: none;
+}
+
+.zoomable-image:hover {
+    cursor: grab;
+}
+
+.zoomable-image:active {
+    cursor: grabbing;
+}
+
+.modal-footer {
+    flex-shrink: 0;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    border-top: 1px solid var(--border-color);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .modal-xl {
+        max-width: 95vw;
+    }
+    
+    .modal-content {
+        height: 95vh;
+    }
+    
+    .zoom-controls {
+        gap: 0.25rem;
+        padding: 0.125rem 0.5rem;
+    }
+    
+    .zoom-controls .btn {
+        min-width: 28px;
+        height: 28px;
+        font-size: 0.8rem;
+    }
+    
+    .zoom-level {
+        font-size: 0.75rem;
+        min-width: 40px;
+    }
 }
