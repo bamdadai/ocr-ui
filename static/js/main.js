@@ -11,6 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const loadingOverlay = document.querySelector('.loading-overlay');
     let files = [];
     let pollingIntervalId = null;
+    let currentUploadedFile = null; // Store the uploaded file for preview
 
     // --- 2. Event Handlers ---
     function preventDefaults(e) { e.preventDefault(); e.stopPropagation(); }
@@ -59,6 +60,9 @@ document.addEventListener('DOMContentLoaded', () => {
         loadingOverlay.classList.remove('d-none');
         resultsContainer.innerHTML = '';
 
+        // Store the uploaded file for preview
+        currentUploadedFile = files[0];
+        
         const formData = new FormData();
         formData.append('file', files[0]);
         formData.append('guid', self.crypto.randomUUID());
@@ -139,6 +143,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         resultCard.innerHTML = `
             <h3>پردازش با موفقیت انجام شد</h3>
+            <div class="mb-3">
+                <button type="button" class="btn btn-outline-primary" onclick="previewOriginalImage()">
+                    <i class="fas fa-image ms-2"></i>
+                    مشاهده تصویر اصلی
+                </button>
+            </div>
             <hr>
             <pre class="ocr-text">${decodedText}</pre>
         `;
@@ -152,5 +162,58 @@ document.addEventListener('DOMContentLoaded', () => {
         errorDiv.className = 'alert alert-danger';
         errorDiv.textContent = message;
         resultsContainer.appendChild(errorDiv);
+    }
+
+    // --- 6. Image Preview Functions ---
+    window.previewOriginalImage = function() {
+        if (!currentUploadedFile) {
+            alert('فایل اصلی برای نمایش موجود نیست.');
+            return;
+        }
+
+        // Check if it's an image file
+        if (!currentUploadedFile.type.startsWith('image/')) {
+            alert('فایل آپلود شده یک تصویر نیست.');
+            return;
+        }
+
+        // Create and show modal
+        const modal = document.createElement('div');
+        modal.className = 'modal fade';
+        modal.id = 'imagePreviewModal';
+        modal.innerHTML = `
+            <div class="modal-dialog modal-lg modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">تصویر اصلی</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body text-center">
+                        <img id="previewImage" class="img-fluid" style="max-height: 70vh;" alt="تصویر اصلی">
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">بستن</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        // Load the image
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            document.getElementById('previewImage').src = e.target.result;
+        };
+        reader.readAsDataURL(currentUploadedFile);
+        
+        // Show modal
+        const bsModal = new bootstrap.Modal(modal);
+        bsModal.show();
+        
+        // Clean up modal after closing
+        modal.addEventListener('hidden.bs.modal', function() {
+            document.body.removeChild(modal);
+        });
     }
 });
