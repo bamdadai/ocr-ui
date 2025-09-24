@@ -29,6 +29,13 @@ document.addEventListener('DOMContentLoaded', () => {
     function handleFiles(newFiles) {
         if (newFiles.length > 0) {
             files = [newFiles[0]];
+            // Add success animation to upload area
+            dropZone.style.borderColor = 'var(--success-color)';
+            dropZone.style.backgroundColor = 'rgba(72, 187, 120, 0.1)';
+            setTimeout(() => {
+                dropZone.style.borderColor = '';
+                dropZone.style.backgroundColor = '';
+            }, 1000);
         }
         updateFileList();
         submitBtn.disabled = files.length === 0;
@@ -39,14 +46,45 @@ document.addEventListener('DOMContentLoaded', () => {
         files.forEach((file, index) => {
             const fileItem = document.createElement('div');
             fileItem.className = 'file-item';
-            fileItem.innerHTML = `<span><i class="fas fa-file-image"></i>${file.name}</span><button type="button" class="btn btn-link text-danger p-0" data-index="${index}" aria-label="Remove file"><i class="fas fa-times"></i></button>`;
+            fileItem.style.opacity = '0';
+            fileItem.style.transform = 'translateY(10px)';
+            
+            // Get file size in a readable format
+            let fileSize = (file.size / 1024).toFixed(1) + ' KB';
+            if (file.size >= 1024 * 1024) {
+                fileSize = (file.size / (1024 * 1024)).toFixed(1) + ' MB';
+            }
+            
+            fileItem.innerHTML = `
+                <span>
+                    <i class="fas fa-file-image"></i>
+                    <strong>${file.name}</strong>
+                    <small class="text-muted d-block">${fileSize}</small>
+                </span>
+                <button type="button" class="btn btn-link text-danger p-1" data-index="${index}" aria-label="Remove file">
+                    <i class="fas fa-times"></i>
+                </button>
+            `;
             fileList.appendChild(fileItem);
+            
+            // Animate in
+            setTimeout(() => {
+                fileItem.style.transition = 'all 0.3s ease';
+                fileItem.style.opacity = '1';
+                fileItem.style.transform = 'translateY(0)';
+            }, 50);
         });
+        
         document.querySelectorAll('.file-item button').forEach(button => {
             button.addEventListener('click', (e) => {
-                files.splice(parseInt(e.currentTarget.dataset.index, 10), 1);
-                updateFileList();
-                submitBtn.disabled = files.length === 0;
+                const fileItem = e.currentTarget.closest('.file-item');
+                fileItem.style.transform = 'translateX(-100%)';
+                fileItem.style.opacity = '0';
+                setTimeout(() => {
+                    files.splice(parseInt(e.currentTarget.dataset.index, 10), 1);
+                    updateFileList();
+                    submitBtn.disabled = files.length === 0;
+                }, 300);
             });
         });
     }
@@ -142,15 +180,29 @@ document.addEventListener('DOMContentLoaded', () => {
         const decodedText = decodeBase64Utf8(result.text);
 
         resultCard.innerHTML = `
-            <h3>پردازش با موفقیت انجام شد</h3>
-            <div class="mb-3">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h3 class="mb-0">
+                    <i class="fas fa-check-circle text-success ms-2"></i>
+                    پردازش با موفقیت انجام شد
+                </h3>
                 <button type="button" class="btn btn-outline-primary" onclick="previewOriginalImage()">
                     <i class="fas fa-image ms-2"></i>
                     مشاهده تصویر اصلی
                 </button>
             </div>
-            <hr>
-            <pre class="ocr-text">${decodedText}</pre>
+            <div class="result-text-container">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="mb-0 text-muted">
+                        <i class="fas fa-file-text ms-2"></i>
+                        متن استخراج شده
+                    </h5>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="copyToClipboard()">
+                        <i class="fas fa-copy ms-1"></i>
+                        کپی متن
+                    </button>
+                </div>
+                <pre class="ocr-text" id="extracted-text">${decodedText}</pre>
+            </div>
         `;
         resultsContainer.appendChild(resultCard);
     }
@@ -215,5 +267,64 @@ document.addEventListener('DOMContentLoaded', () => {
         modal.addEventListener('hidden.bs.modal', function() {
             document.body.removeChild(modal);
         });
+    }
+
+    // Copy to clipboard function
+    window.copyToClipboard = function() {
+        const textElement = document.getElementById('extracted-text');
+        if (!textElement) {
+            alert('متنی برای کپی کردن یافت نشد.');
+            return;
+        }
+
+        const text = textElement.textContent;
+        
+        // Use modern clipboard API if available
+        if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(text).then(() => {
+                showCopySuccess();
+            }).catch(() => {
+                fallbackCopyTextToClipboard(text);
+            });
+        } else {
+            fallbackCopyTextToClipboard(text);
+        }
+    }
+
+    function fallbackCopyTextToClipboard(text) {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        textArea.style.top = '-999999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        
+        try {
+            document.execCommand('copy');
+            showCopySuccess();
+        } catch (err) {
+            alert('خطا در کپی کردن متن.');
+        }
+        
+        document.body.removeChild(textArea);
+    }
+
+    function showCopySuccess() {
+        // Show temporary success message
+        const copyBtn = document.querySelector('button[onclick="copyToClipboard()"]');
+        if (copyBtn) {
+            const originalHTML = copyBtn.innerHTML;
+            copyBtn.innerHTML = '<i class="fas fa-check ms-1"></i>کپی شد!';
+            copyBtn.classList.remove('btn-outline-secondary');
+            copyBtn.classList.add('btn-success');
+            
+            setTimeout(() => {
+                copyBtn.innerHTML = originalHTML;
+                copyBtn.classList.remove('btn-success');
+                copyBtn.classList.add('btn-outline-secondary');
+            }, 2000);
+        }
     }
 });
