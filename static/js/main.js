@@ -72,7 +72,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const mainTaskID = data.task_id;
             if (mainTaskID) {
-                displayQueueStatus(data);
                 pollForTaskResult(mainTaskID);
             } else {
                 throw new Error("سرور شناسه تسک معتبری برنگرداند.");
@@ -139,26 +138,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const decodedText = decodeBase64Utf8(result.text);
 
         resultCard.innerHTML = `
-            <h3>✅ پردازش با موفقیت انجام شد</h3>
-            <p><strong>شناسه یکتا (GUID):</strong> ${result.guid}</p>
-            <p><strong>میزان اطمینان:</strong> ${(result.confidence * 100).toFixed(2)}%</p>
+            <h3>پردازش با موفقیت انجام شد</h3>
             <hr>
             <pre class="ocr-text">${decodedText}</pre>
         `;
         resultsContainer.appendChild(resultCard);
     }
     
-    function displayQueueStatus(result) {
-        resultsContainer.innerHTML = '';
-        const queueMessage = document.createElement('div');
-        queueMessage.className = 'alert alert-info';
-        queueMessage.innerHTML = `
-            <p><strong>فایل "${result.filename}" برای پردازش در صف قرار گرفت.</strong></p>
-            <p><small>شناسه تسک: ${result.task_id}</small></p>
-            <p>لطفاً منتظر بمانید...</p>
-        `;
-        resultsContainer.appendChild(queueMessage);
-    }
 
     function displayError(message) {
         resultsContainer.innerHTML = '';
