@@ -30,8 +30,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (newFiles.length > 0) {
             files = [newFiles[0]];
             // Add success animation to upload area
-            dropZone.style.borderColor = 'var(--success-color)';
-            dropZone.style.backgroundColor = 'rgba(72, 187, 120, 0.1)';
+            dropZone.style.borderColor = '#22c55e';
+            dropZone.style.backgroundColor = 'rgba(59, 130, 246, 0.15)';
             setTimeout(() => {
                 dropZone.style.borderColor = '';
                 dropZone.style.backgroundColor = '';
