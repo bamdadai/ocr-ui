@@ -85,6 +85,7 @@ class DetectionService:
         self.device = config['device']
         self.debug = config['debug']
         self.timing_enabled = config.get('timing_enabled', True)  # Enable method timing by default
+        logger.info("detection_service.init", debug=self.debug, debug_word_path=config.get('debug_word_path'), debug_line_path=config.get('debug_line_path'))
 
         self.models = {
             'word': self._load_yolo_model(config['word_detect']['path']),
@@ -239,12 +240,17 @@ class DetectionService:
             try:
                 fname = f"{model_type}_debug_{uuid.uuid4().hex[:8]}.jpg"
                 out_path = os.path.join(str(self.debug_info[model_type]['path']), fname)
+                logger.info("detection_service.debug_saving", model_type=model_type, path=out_path)
                 os.makedirs(self.debug_info[model_type]['path'], exist_ok=True)
                 debug_image = image.copy()
                 debug_image = debug_draw_func(debug_image, post_processed)
-                cv2.imwrite(out_path, debug_image)
+                success = cv2.imwrite(out_path, debug_image)
+                if success:
+                    logger.info("detection_service.debug_saved", model_type=model_type, path=out_path)
+                else:
+                    logger.warning("detection_service.debug_save_failed", model_type=model_type, path=out_path, reason="cv2.imwrite returned False")
             except Exception as e:
-                logger.warning("detection_service.debug_save_failed", error=str(e))
+                logger.warning("detection_service.debug_save_failed", model_type=model_type, error=str(e))
         logger.info("detection_service.single_image_done", model_type=model_type, duration_ms=int(duration * 1000))
         return post_processed
 

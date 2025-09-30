@@ -31,7 +31,8 @@ RUN python3 -m venv "$VIRTUAL_ENV" \
     && . "$VIRTUAL_ENV/bin/activate" \
     && pip install --upgrade pip \
     && pip install --timeout=600 -r ${REQ_FILE} \
-    && pip install --default-timeout=100 --no-cache-dir --index-url https://download.pytorch.org/whl/cu124 torch==2.6.0 torchvision==0.21.0
+    && pip install --default-timeout=100 --no-cache-dir --index-url https://download.pytorch.org/whl/cu124 torch==2.6.0 torchvision==0.21.0 \
+    && pip install --default-timeout=100 --no-cache-dir --index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/ paddlepaddle-gpu==3.0.0
 
 # 3) Create non-root user and copy application code
 RUN useradd --create-home --shell /bin/bash appuser
