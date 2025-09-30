@@ -1,33 +1,5 @@
 version: '3.8'
 
-networks:
-  ocr_network:
-    driver: bridge
-    name: ocr_production_network
-
-volumes:
-  redis_data:
-  rabbitmq_data:
-  app_logs:
-  model_weights:
-    driver: local
-    driver_opts:
-      type: 'none'
-      o: 'bind'
-      device: './weights'
-  temp_files:
-    driver: local
-    driver_opts:
-      type: 'none'
-      o: 'bind'
-      device: './temp_files'
-
-secrets:
-  rabbitmq_user:
-    file: ./secrets/rabbitmq_user.txt
-  rabbitmq_password:
-    file: ./secrets/rabbitmq_password.txt
-
 services:
   # -------------------------
   # Infrastructure Services
@@ -52,17 +24,15 @@ services:
       - "127.0.0.1:15672:15672"  # Bind to localhost only
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
-    environment:
-      - RABBITMQ_DEFAULT_USER_FILE=/run/secrets/rabbitmq_user
-      - RABBITMQ_DEFAULT_PASS_FILE=/run/secrets/rabbitmq_password
-    secrets:
-      - rabbitmq_user
-      - rabbitmq_password
+      - ./rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
     networks:
       - ocr_network
     healthcheck:
       test: rabbitmq-diagnostics -q ping
       interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
   # -------------------------
   # Application Services
@@ -75,7 +45,8 @@ services:
         REQ_FILE: requirements/api.txt
     container_name: ocr_api
     restart: unless-stopped
-    user: "1000:1000"  # Use non-root user
+    user: "1000:1000"  # Use container user as defined in Dockerfile
+    working_dir: /home/appuser
     command: gunicorn -w 4 -k uvicorn.workers.UvicornWorker app.main:app --bind 0.0.0.0:8084
     ports:
       - "8000:8084"
@@ -83,7 +54,7 @@ services:
     environment:
       - PYTHONPATH=/home/appuser
     volumes:
-      - app_logs:/home/appuser/logs
+      - ./logs:/home/appuser/logs
     depends_on:
       redis: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
@@ -102,7 +73,8 @@ services:
         REQ_FILE: requirements/worker.txt
     container_name: ocr_worker_pipeline
     restart: unless-stopped
-    user: "1000:1000"  # Use non-root user
+    user: "1000:1000"  # Use container user as defined in Dockerfile
+    working_dir: /home/appuser
     command: python -m celery -A app.worker.celery_app worker -l info -Q ocr_pipeline -c 1
     env_file: .env
     environment:
@@ -110,7 +82,7 @@ services:
     volumes:
       - ./weights:/home/appuser/weights:ro
       - ./temp_files:/home/appuser/temp_files
-      - app_logs:/home/appuser/logs
+      - ./logs:/home/appuser/logs
     gpus: all
     deploy:
       resources:
@@ -134,14 +106,15 @@ services:
         REQ_FILE: requirements/worker.txt
     container_name: ocr_worker_dispatch
     restart: unless-stopped
-    user: "1000:1000"  # Use non-root user
+    user: "1000:1000"  # Use container user as defined in Dockerfile
+    working_dir: /home/appuser
     command: python -m celery -A app.worker.celery_app worker -l info -Q dispatch -c 4
     env_file: .env
     environment:
       - PYTHONPATH=/home/appuser
     volumes:
       - temp_files:/home/appuser/temp_files
-      - app_logs:/home/appuser/logs
+      - ./logs:/home/appuser/logs
     deploy:
       resources:
         limits: { cpus: '1.0', memory: 4G }
@@ -157,16 +130,39 @@ services:
         REQ_FILE: requirements/worker.txt
     container_name: ocr_worker_webhooks
     restart: unless-stopped
-    user: "1000:1000"  # Use non-root user
+    user: "1000:1000"  # Use container user as defined in Dockerfile
+    working_dir: /home/appuser
     command: python -m celery -A app.worker.celery_app worker -l info -Q webhooks -c 4
     env_file: .env
     environment:
       - PYTHONPATH=/home/appuser
     volumes:
-      - app_logs:/home/appuser/logs
+      - ./logs:/home/appuser/logs
     deploy:
       resources:
         limits: { cpus: '1.0', memory: 2G }
     depends_on: [redis, rabbitmq]
     networks:
       - ocr_network
+
+
+networks:
+  ocr_network:
+    driver: bridge
+    name: ocr_production_network
+
+volumes:
+  redis_data:
+  rabbitmq_data:
+  model_weights:
+    driver: local
+    driver_opts:
+      type: 'none'
+      o: 'bind'
+      device: './weights'
+  temp_files:
+    driver: local
+    driver_opts:
+      type: 'none'
+      o: 'bind'
+      device: './temp_files'
