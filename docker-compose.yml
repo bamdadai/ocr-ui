@@ -81,7 +81,7 @@ services:
       - PYTHONPATH=/home/appuser
     volumes:
       - ./weights:/home/appuser/weights:ro
-      - ./temp_files:/home/appuser/temp_files
+      - ./debug:/home/appuser/debug
       - ./logs:/home/appuser/logs
     gpus: all
     deploy:
@@ -113,7 +113,7 @@ services:
     environment:
       - PYTHONPATH=/home/appuser
     volumes:
-      - temp_files:/home/appuser/temp_files
+      - ./debug:/home/appuser/debug
       - ./logs:/home/appuser/logs
     deploy:
       resources:
@@ -154,15 +154,3 @@ networks:
 volumes:
   redis_data:
   rabbitmq_data:
-  model_weights:
-    driver: local
-    driver_opts:
-      type: 'none'
-      o: 'bind'
-      device: './weights'
-  temp_files:
-    driver: local
-    driver_opts:
-      type: 'none'
-      o: 'bind'
-      device: './temp_files'

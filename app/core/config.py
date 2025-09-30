@@ -69,7 +69,6 @@ class Settings(BaseSettings):
     CELERY_BROKER_URL: str = "amqp://guest:guest@localhost:5672//"
     CELERY_BACKEND_URL: str = "redis://localhost:6379/0"
     LOG_FILE_PATH: Path = PROJECT_ROOT / "logs/app.log"
-    TEMP_DIR: Path = PROJECT_ROOT / "temp_files"
     SEARCHABLE_PDF_FONT_PATH: Path = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
     ALLOW_INSECURE_WEBHOOKS: bool = False
 
@@ -137,11 +136,9 @@ settings = load_settings()
 
 def setup_directories():
     """
-    Creates necessary application directories, such as for logs and temporary files,
-    on application startup.
+    Creates necessary application directories on application startup.
     """
     settings.LOG_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    settings.TEMP_DIR.mkdir(parents=True, exist_ok=True)
     if settings.debug:
         settings.detection.debug_word_path.mkdir(parents=True, exist_ok=True)
         settings.detection.debug_line_path.mkdir(parents=True, exist_ok=True)

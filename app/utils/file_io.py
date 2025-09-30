@@ -48,7 +48,3 @@ def get_file_as_base64(file_path: str) -> str:
     """Reads a file and returns its base64 encoded content."""
     with open(file_path, 'rb') as f:
         return base64.b64encode(f.read()).decode('utf-8')
-
-def ensure_temp_directory() -> Path:
-    """Returns the path to the temporary directory defined in settings."""
-    return Path(settings.TEMP_DIR)

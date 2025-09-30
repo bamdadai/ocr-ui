@@ -23,7 +23,9 @@
             "max_batch_size": 8,
             "memory_limit_mb": 8192
         },
-        "debug": true
+        "debug": true,
+        "debug_word_path": "debug/word_detections",
+        "debug_line_path": "debug/line_detections"
     },
     "recognition": {
         "device": "cpu",
