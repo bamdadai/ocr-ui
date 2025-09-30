@@ -89,7 +89,7 @@ def recognize_page_task(self, context: dict) -> dict:
     logger.info("recognize_page.success", page=context["page_index"] + 1, confidence=confidence)
     return {"page_index": context["page_index"]}
 
-@app.task(name='app.worker.tasks.send_webhook_result', bind=True, autoretry_for=(RequestException,), retry_kwargs={"max_retries": 5, "countdown": 5})
+@app.task(name='app.worker.tasks.send_webhook_result', bind=True, autoretry_for=(RequestException,), retry_kwargs={"max_retries": 3, "countdown": 10})
 def send_webhook_result(self, webhook_url: str, payload: dict, **kwargs):
     guid = payload.get('guid')
     try:
@@ -178,6 +178,7 @@ def finalize_and_notify_task(page_results: list, request_id: str, guid: str, web
     avg_confidence = sum(p['confidence'] for p in all_pages) / len(all_pages) if all_pages else 0.0
 
     final_payload = {
+        "task_id": request_id,  # Add task_id to match documentation
         "guid": guid,
         "text": base64.b64encode(full_text.encode('utf-8')).decode('utf-8'),
         "confidence": avg_confidence,

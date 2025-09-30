@@ -6,11 +6,9 @@ from typing import Optional, List, Any, Union
 # --- Output Schemas ---
 
 class TaskQueueResponse(BaseModel):
-    """The response returned after successfully queuing a task."""
-    guid: str = Field(..., description="The unique identifier for the processed file.")
-    filename: str = Field(..., description="The original filename of the uploaded file.")
-    status: str = Field(..., description="The initial status of the task, always 'queued'.")
-    task_id: str = Field(..., description="The main workflow task ID used for polling the final result.")
+    """The response returned after successfully queuing tasks."""
+    task_ids: List[str] = Field(..., description="List of task IDs for the queued OCR tasks.")
+    status: str = Field(..., description="The initial status of the tasks, always 'queued'.")
 
 
 # --- Task Status Schemas ---

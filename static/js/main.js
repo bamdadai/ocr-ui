@@ -116,8 +116,7 @@ document.addEventListener('DOMContentLoaded', () => {
         currentUploadedFile = files[0];
         
         const formData = new FormData();
-        formData.append('file', files[0]);
-        formData.append('guid', self.crypto.randomUUID());
+        formData.append('files', files[0]); // API expects 'files' parameter for multiple files
         
         try {
             const response = await fetch('/v3/ocr', { method: 'POST', body: formData });
@@ -126,7 +125,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const errorDetail = data.detail || 'خطای ناشناخته از سمت سرور';
                 throw new Error(typeof errorDetail === 'object' ? JSON.stringify(errorDetail) : errorDetail);
             }
-            const mainTaskID = data.task_id;
+            const mainTaskID = data.task_ids && data.task_ids.length > 0 ? data.task_ids[0] : null;
             if (mainTaskID) {
                 pollForTaskResult(mainTaskID);
             } else {

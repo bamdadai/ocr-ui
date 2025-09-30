@@ -83,23 +83,22 @@ app.include_router(ocr_endpoint.router, prefix="/v3", tags=["V3 - OCR"])
 
 # --- UI and Health Check Endpoints ---
 
-@app.get("/", response_class=HTMLResponse, tags=["User Interface"])
-async def serve_frontend(request: Request):
+@app.get("/", tags=["Health Check"])
+async def root_endpoint(request: Request):
     """
-    Serve the main single-page application (SPA) user interface.
+    Serve the health check for API clients or the frontend UI for browsers.
 
-    Args:
-        request: The incoming request object.
+    This endpoint serves both purposes:
+    - Returns JSON health check for API clients (Accept: application/json)
+    - Returns HTML frontend for browser requests
+    """
+    # Check if client accepts JSON (API client) or prefers HTML (browser)
+    accept_header = request.headers.get("accept", "").lower()
 
-    Returns:
-        An HTML response containing the rendered index.html.
-    """
-    return templates.TemplateResponse("index.html", {"request": request})
-
-@app.get("/health", tags=["Health Check"])
-async def health_check():
-    """
-    Provide a simple health check endpoint to confirm the service is running.
-    """
-    logger.info("health_check.called", status="healthy")
-    return {"status": "ok", "message": "OCR Service is running and healthy."}
+    if "application/json" in accept_header or request.headers.get("content-type") == "application/json":
+        # API client requesting health check
+        logger.info("health_check.called", status="healthy")
+        return {"message": "OCR Service is running"}
+    else:
+        # Browser requesting frontend UI
+        return templates.TemplateResponse("index.html", {"request": request})
