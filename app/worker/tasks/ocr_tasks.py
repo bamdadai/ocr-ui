@@ -25,6 +25,28 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger(__name__)
 
+# --- Postprocessing Functions ---
+
+def postprocess_ocr_text(text: str) -> str:
+    """
+    Postprocess OCR text to remove separate 'x' or 'X' characters.
+
+    This function removes standalone 'x' or 'X' characters that appear
+    separated from other text, while preserving 'x'/'X' characters that
+    are part of words.
+    """
+    import re
+
+    # Remove standalone 'x' or 'X' characters (surrounded by whitespace or at start/end)
+    # This regex matches 'x' or 'X' that are either:
+    # - At the start of text followed by whitespace
+    # - At the end of text preceded by whitespace
+    # - Surrounded by whitespace on both sides
+    text = re.sub(r'(?<!\w)[xX](?!\w)', '', text)
+
+
+    return text
+
 # --- Lazy Loading and Micro-tasks (These remain unchanged) ---
 
 pipeline_singleton: 'PipelineService | None' = None
@@ -165,14 +187,18 @@ def finalize_and_notify_task(page_results: list, request_id: str, guid: str, web
     # Join the text parts from all pages
     original_text = "\n\n--- PAGE BREAK ---\n\n".join([p['text'] for p in all_pages])
 
+    # --- POSTPROCESSING ---
+    # Remove separate 'x' or 'X' characters from OCR output
+    processed_text = postprocess_ocr_text(original_text)
+
     # --- FINAL ENCODING FIX ---
     # This standard pattern corrects text that was decoded incorrectly as Latin-1
     # when it should have been UTF-8. We apply it directly.
     try:
-        full_text = original_text.encode('latin-1').decode('utf-8')
+        full_text = processed_text.encode('latin-1').decode('utf-8')
     except Exception:
         # Fallback in the rare case the text is already correct
-        full_text = original_text
+        full_text = processed_text
     # ---------------------------
 
     avg_confidence = sum(p['confidence'] for p in all_pages) / len(all_pages) if all_pages else 0.0
