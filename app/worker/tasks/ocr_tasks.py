@@ -108,17 +108,18 @@ def send_webhook_result(self, webhook_url: str, payload: dict, **kwargs):
 def postprocess_ocr_text(text: str) -> str:
     """
     Remove standalone 'x' or 'X' characters from OCR text.
-    Only removes 'x'/'X' that appear as single characters, not as part of words.
+    Removes single 'x'/'X' characters and sequences of two or more 'x'/'X' characters.
+    Only removes 'x'/'X' that appear as separate characters, not as part of words.
     """
     if not text:
         return text
 
-    # Pattern to match standalone x/X characters:
-    # \b[xX]\b - word boundaries around x/X
-    # But we need to be careful not to remove x/X from words like "text", "extra", "X-ray", etc.
-    # So we'll use a more specific pattern that looks for x/X surrounded by whitespace or punctuation
-    # Remove standalone x/X between spaces
+    # Remove sequences of two or more x/X characters (xx, xxx, XX, xX, etc.)
+    text = re.sub(r'[xX]{2,}', '', text)
+
+    # Remove standalone single x/X characters surrounded by whitespace
     text = re.sub(r'\s+[xX]\s+', '', text)
+
     return text.strip()
 
 # --- Orchestrator and Finalizer Tasks (MODIFIED) ---
