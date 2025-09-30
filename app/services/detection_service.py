@@ -5,6 +5,7 @@ import torch
 import structlog
 import time
 import os
+import functools
 from typing import List, Callable, Dict, Any, Literal, Optional, Sequence, Tuple
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -21,6 +22,60 @@ from app.utils.common import get_current_memory_usage_mb
 logger = structlog.get_logger(__name__)
 ModelType = Literal['word', 'line']
 
+
+def time_method(func: Callable) -> Callable:
+    """
+    Decorator to measure and log execution time of methods.
+
+    Best practices:
+    - Uses time.perf_counter() for high-precision wall-clock timing
+    - Logs method entry, execution time, and exit
+    - Handles exceptions without interfering with error handling
+    - Includes method name and basic parameter info in logs
+    - Minimal performance overhead when disabled
+    """
+    @functools.wraps(func)
+    def wrapper(self, *args, **kwargs):
+        # Check if timing is enabled (configurable)
+        if not getattr(self, 'timing_enabled', True):
+            return func(self, *args, **kwargs)
+
+        method_name = f"{self.__class__.__name__}.{func.__name__}"
+        start_time = time.perf_counter()
+
+        # Log method entry with parameter count (avoid logging large objects)
+        arg_count = len(args) + len(kwargs)
+        logger.debug("method.entry", method=method_name, arg_count=arg_count)
+
+        try:
+            result = func(self, *args, **kwargs)
+            end_time = time.perf_counter()
+            duration_ms = (end_time - start_time) * 1000
+
+            # Log successful completion with timing
+            logger.info("method.timing",
+                       method=method_name,
+                       duration_ms=round(duration_ms, 2),
+                       success=True)
+
+            return result
+
+        except Exception as e:
+            end_time = time.perf_counter()
+            duration_ms = (end_time - start_time) * 1000
+
+            # Log exception with timing
+            logger.warning("method.timing",
+                          method=method_name,
+                          duration_ms=round(duration_ms, 2),
+                          success=False,
+                          error=str(e))
+
+            # Re-raise the exception
+            raise
+
+    return wrapper
+
 class DetectionService:
     """
     Manages object detection models and orchestrates prediction logic using
@@ -29,6 +84,7 @@ class DetectionService:
     def __init__(self, config: Dict[str, Any]):
         self.device = config['device']
         self.debug = config['debug']
+        self.timing_enabled = config.get('timing_enabled', True)  # Enable method timing by default
 
         self.models = {
             'word': self._load_yolo_model(config['word_detect']['path']),
@@ -79,14 +135,17 @@ class DetectionService:
                     line_tiles=self.line_tiles,
                     )
 
+    @time_method
     def _load_yolo_model(self, model_path: str) -> YOLO:
         model = YOLO(model_path)
         return model.to(self.device)
 
+    @time_method
     def predict_word_polygons(self, images: List[np.ndarray]) -> Dict[str, List]:
         logger.info("detection_service.predicting", model_type="word", image_count=len(images))
         return {'word_polygons': self._predict(images, model_type='word')}
 
+    @time_method
     def predict_line_boxes(self, images: List[np.ndarray]) -> Dict[str, List]:
         logger.info("detection_service.predicting", model_type="line", image_count=len(images))
         # Use tiled predictor if enabled; otherwise fallback to single-shot prediction
@@ -97,6 +156,7 @@ class DetectionService:
         else:
             return {'line_boxes': self._predict(images, model_type='line')}
 
+    @time_method
     def _predict(self, images: List[np.ndarray], model_type: ModelType) -> List:
         """A generic prediction orchestrator."""
         processor_function = lambda img: self._execute_single_image_prediction(
@@ -110,6 +170,7 @@ class DetectionService:
         )
         return self._process_in_optimal_batches(images, processor_function)
 
+    @time_method
     def _resolve_allowed_class_ids(self, results: Results, model_type: ModelType) -> Optional[List[int]]:
         """Optionally filter detections by configured classes. If not configured, return unchanged."""
         try:
@@ -135,6 +196,7 @@ class DetectionService:
         except Exception:
             return None
 
+    @time_method
     def _filter_by_classes(self, results: Results, model_type: ModelType) -> Results:
         """Optionally filter detections by configured classes. If not configured, return unchanged."""
         try:
@@ -155,6 +217,7 @@ class DetectionService:
             logger.warning("detection_service.class_filter_failed", model_type=model_type, error=str(e))
             return results
 
+    @time_method
     def _execute_single_image_prediction(
         self, 
         image: np.ndarray, 
@@ -185,6 +248,7 @@ class DetectionService:
         logger.info("detection_service.single_image_done", model_type=model_type, duration_ms=int(duration * 1000))
         return post_processed
 
+    @time_method
     def _post_process_word_results(self, word_result: Results) -> List[List[int]]:
         """Post-processes word detection results including polygon merging.
         If segmentation masks are unavailable (e.g., using a bbox-only model),
@@ -216,12 +280,14 @@ class DetectionService:
             logger.warning("detection_service.word_bbox_fallback_failed", error=str(e))
             return []
 
+    @time_method
     def _post_process_line_results(self, line_result: Results) -> List[List[float]]:
         """Post-processes line detection results."""
         if line_result.boxes is None: return []
         return [box.xyxy[0].cpu().numpy().tolist() for box in line_result.boxes]
 
     # --- Tiled line detection inspired by tests/line_detection.py ---
+    @time_method
     def _predict_lines_tiled(self, image: np.ndarray) -> List[List[float]]:
         if image is None:
             return []
@@ -263,6 +329,7 @@ class DetectionService:
         final_boxes.sort(key=lambda b: b[1])
         return final_boxes
 
+    @time_method
     def _horizontal_tile_and_collect(self, padded_img: np.ndarray) -> List[Tuple[np.ndarray, Optional[np.ndarray]]]:
         h, w = padded_img.shape[:2]
         overlap = int(w * self.line_tile_overlap_ratio)
@@ -321,6 +388,7 @@ class DetectionService:
                 detections.append((adj_box, mask))
         return detections
 
+    @time_method
     def _merge_all_connected_lines(
         self,
         detections: List[Tuple[np.ndarray, Optional[np.ndarray]]],
@@ -380,6 +448,7 @@ class DetectionService:
             merged.append((merged_box, merged_mask))
         return merged
 
+    @time_method
     def _compute_iou(self, boxA: np.ndarray, boxB: np.ndarray) -> float:
         xA = max(boxA[0], boxB[0])
         yA = max(boxA[1], boxB[1])
@@ -391,6 +460,7 @@ class DetectionService:
         denom = (boxAArea + boxBArea - interArea + 1e-6)
         return float(interArea / denom) if denom > 0 else 0.0
 
+    @time_method
     def _add_padding_all_sides(self, img: np.ndarray, pad_ratio: float = 0.1) -> Tuple[np.ndarray, Tuple[int, int, int, int]]:
         h, w = img.shape[:2]
         pad_h = int(h * pad_ratio)
@@ -398,6 +468,7 @@ class DetectionService:
         padded = cv2.copyMakeBorder(img, pad_h, pad_h, pad_w, pad_w, cv2.BORDER_CONSTANT, value=(0, 0, 0))
         return padded, (pad_h, pad_h, pad_w, pad_w)
 
+    @time_method
     def _process_in_optimal_batches(self, images: List[np.ndarray], processor_function: Callable) -> List:
         """Processes images in dynamically adjusted batches based on memory."""
         if not self.parallel_enabled or len(images) <= 1:
@@ -418,6 +489,7 @@ class DetectionService:
                 logger.info("detection_service.batch.memory_low", new_batch_size=batch_size, memory_mb=current_memory)
         return results
 
+    @time_method
     def _process_batch_parallel(self, images: List[np.ndarray], processor_function: Callable) -> List:
         results: List = []
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
