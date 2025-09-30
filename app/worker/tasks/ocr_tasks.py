@@ -6,6 +6,7 @@ import cv2
 import numpy as np
 import requests
 import structlog
+import re
 from celery import chain, group, chord
 from requests.exceptions import RequestException
 from typing import TYPE_CHECKING
@@ -102,6 +103,24 @@ def send_webhook_result(self, webhook_url: str, payload: dict, **kwargs):
         raise self.retry(exc=exc)
 
 
+# --- Postprocessing Functions ---
+
+def postprocess_ocr_text(text: str) -> str:
+    """
+    Remove standalone 'x' or 'X' characters from OCR text.
+    Only removes 'x'/'X' that appear as single characters, not as part of words.
+    """
+    if not text:
+        return text
+
+    # Pattern to match standalone x/X characters:
+    # \b[xX]\b - word boundaries around x/X
+    # But we need to be careful not to remove x/X from words like "text", "extra", "X-ray", etc.
+    # So we'll use a more specific pattern that looks for x/X surrounded by whitespace or punctuation
+    # Remove standalone x/X between spaces
+    text = re.sub(r'\s+[xX]\s+', '', text)
+    return text.strip()
+
 # --- Orchestrator and Finalizer Tasks (MODIFIED) ---
 
 @app.task(name='app.worker.tasks.process_ocr_task', acks_late=True, bind=True)
@@ -173,6 +192,11 @@ def finalize_and_notify_task(page_results: list, request_id: str, guid: str, web
     except Exception:
         # Fallback in the rare case the text is already correct
         full_text = original_text
+    # ---------------------------
+
+    # --- POSTPROCESSING ---
+    # Remove standalone 'x' or 'X' characters from OCR output
+    full_text = postprocess_ocr_text(full_text)
     # ---------------------------
 
     avg_confidence = sum(p['confidence'] for p in all_pages) / len(all_pages) if all_pages else 0.0
