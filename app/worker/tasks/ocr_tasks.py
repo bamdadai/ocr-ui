@@ -32,13 +32,10 @@ def postprocess_ocr_text(text: str) -> str:
     Postprocess OCR text to remove separate 'x' or 'X' characters.
 
     This function removes standalone 'x' or 'X' characters that appear
-    separated from other text, and also removes 'x'/'X' characters that
-    appear before or after Persian/Arabic words.
+    separated from other text, while preserving 'x'/'X' characters that
+    are part of words.
     """
     import re
-
-    # Persian/Arabic character ranges for regex
-    persian_chars = r'[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFDF0-\uFEFF]'
 
     # Remove standalone 'x' or 'X' characters (surrounded by whitespace or at start/end)
     # This regex matches 'x' or 'X' that are either:
@@ -47,11 +44,6 @@ def postprocess_ocr_text(text: str) -> str:
     # - Surrounded by whitespace on both sides
     text = re.sub(r'(?<!\w)[xX](?!\w)', '', text)
 
-    # Remove 'x'/'X' that appears immediately before Persian characters
-    text = re.sub(r'[xX](?=' + persian_chars + r')', '', text)
-
-    # Remove 'x'/'X' that appears immediately after Persian characters
-    text = re.sub(r'(?<=' + persian_chars + r')[xX]', '', text)
 
     return text
 
