@@ -63,6 +63,7 @@ Thumbs.db
 *.env.*
 !*.env.example
 !*.env.template
+./secrets/
 
 # فایل‌های مربوط به تست
 # Test-related files

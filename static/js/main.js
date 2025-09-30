@@ -30,8 +30,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (newFiles.length > 0) {
             files = [newFiles[0]];
             // Add success animation to upload area
+            dropZone.style.transition = 'all 0.3s ease';
             dropZone.style.borderColor = '#22c55e';
-            dropZone.style.backgroundColor = 'rgba(59, 130, 246, 0.15)';
+            dropZone.style.backgroundColor = 'rgba(34, 197, 94, 0.1)';
             setTimeout(() => {
                 dropZone.style.borderColor = '';
                 dropZone.style.backgroundColor = '';
@@ -47,14 +48,17 @@ document.addEventListener('DOMContentLoaded', () => {
             const fileItem = document.createElement('div');
             fileItem.className = 'file-item';
             fileItem.style.opacity = '0';
-            fileItem.style.transform = 'translateY(10px)';
-            
+            fileItem.style.maxHeight = '0';
+            fileItem.style.padding = '0';
+            fileItem.style.margin = '0';
+            fileItem.style.overflow = 'hidden';
+
             // Get file size in a readable format
             let fileSize = (file.size / 1024).toFixed(1) + ' KB';
             if (file.size >= 1024 * 1024) {
                 fileSize = (file.size / (1024 * 1024)).toFixed(1) + ' MB';
             }
-            
+
             fileItem.innerHTML = `
                 <span>
                     <i class="fas fa-file-image"></i>
@@ -66,22 +70,32 @@ document.addEventListener('DOMContentLoaded', () => {
                 </button>
             `;
             fileList.appendChild(fileItem);
-            
-            // Animate in
+
+            // Animate in with stable layout
             setTimeout(() => {
-                fileItem.style.transition = 'all 0.3s ease';
+                fileItem.style.transition = 'all 0.3s ease-out';
+                fileItem.style.maxHeight = '100px';
                 fileItem.style.opacity = '1';
-                fileItem.style.transform = 'translateY(0)';
+                fileItem.style.padding = '1rem 1.5rem';
+                fileItem.style.margin = '1rem 0';
             }, 50);
         });
         
         document.querySelectorAll('.file-item button').forEach(button => {
             button.addEventListener('click', (e) => {
                 const fileItem = e.currentTarget.closest('.file-item');
-                fileItem.style.transform = 'translateX(-100%)';
+                const index = parseInt(e.currentTarget.dataset.index, 10);
+
+                // Animate out with stable layout
+                fileItem.style.transition = 'all 0.3s ease-out';
+                fileItem.style.maxHeight = '0';
+                fileItem.style.padding = '0';
                 fileItem.style.opacity = '0';
+                fileItem.style.margin = '0';
+                fileItem.style.overflow = 'hidden';
+
                 setTimeout(() => {
-                    files.splice(parseInt(e.currentTarget.dataset.index, 10), 1);
+                    files.splice(index, 1);
                     updateFileList();
                     submitBtn.disabled = files.length === 0;
                 }, 300);
@@ -185,7 +199,7 @@ document.addEventListener('DOMContentLoaded', () => {
         resultCard.innerHTML = `
             <div class="result-text-container">
                 <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h5 class="mb-0 text-muted">
+                    <h5 class="mb-0 text-white fw-bold">
                         <i class="fas fa-file-text ms-2"></i>
                         متن استخراج شده
                     </h5>

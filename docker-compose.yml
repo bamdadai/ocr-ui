@@ -1,6 +1,4 @@
-# ====================================================================
-# Final, Production-Ready docker-compose.yml
-# ====================================================================
+version: '3.8'
 
 networks:
   ocr_network:
@@ -24,6 +22,12 @@ volumes:
       o: 'bind'
       device: './temp_files'
 
+secrets:
+  rabbitmq_user:
+    file: ./secrets/rabbitmq_user.txt
+  rabbitmq_password:
+    file: ./secrets/rabbitmq_password.txt
+
 services:
   # -------------------------
   # Infrastructure Services
@@ -45,12 +49,15 @@ services:
     container_name: ocr_rabbitmq
     restart: unless-stopped
     ports:
-      - "15672:15672"
+      - "127.0.0.1:15672:15672"  # Bind to localhost only
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     environment:
-      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER:-user}
-      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASS:-password}
+      - RABBITMQ_DEFAULT_USER_FILE=/run/secrets/rabbitmq_user
+      - RABBITMQ_DEFAULT_PASS_FILE=/run/secrets/rabbitmq_password
+    secrets:
+      - rabbitmq_user
+      - rabbitmq_password
     networks:
       - ocr_network
     healthcheck:
@@ -68,7 +75,7 @@ services:
         REQ_FILE: requirements/api.txt
     container_name: ocr_api
     restart: unless-stopped
-    user: root
+    user: "1000:1000"  # Use non-root user
     command: gunicorn -w 4 -k uvicorn.workers.UvicornWorker app.main:app --bind 0.0.0.0:8084
     ports:
       - "8000:8084"
@@ -95,7 +102,7 @@ services:
         REQ_FILE: requirements/worker.txt
     container_name: ocr_worker_pipeline
     restart: unless-stopped
-    user: root
+    user: "1000:1000"  # Use non-root user
     command: python -m celery -A app.worker.celery_app worker -l info -Q ocr_pipeline -c 1
     env_file: .env
     environment:
@@ -127,7 +134,7 @@ services:
         REQ_FILE: requirements/worker.txt
     container_name: ocr_worker_dispatch
     restart: unless-stopped
-    user: root
+    user: "1000:1000"  # Use non-root user
     command: python -m celery -A app.worker.celery_app worker -l info -Q dispatch -c 4
     env_file: .env
     environment:
@@ -137,7 +144,7 @@ services:
       - app_logs:/home/appuser/logs
     deploy:
       resources:
-        limits: { cpus: '1.0', memory: 2G }
+        limits: { cpus: '1.0', memory: 4G }
     depends_on: [redis, rabbitmq]
     networks:
       - ocr_network
@@ -150,7 +157,7 @@ services:
         REQ_FILE: requirements/worker.txt
     container_name: ocr_worker_webhooks
     restart: unless-stopped
-    user: root
+    user: "1000:1000"  # Use non-root user
     command: python -m celery -A app.worker.celery_app worker -l info -Q webhooks -c 4
     env_file: .env
     environment:
