@@ -181,7 +181,7 @@ def finalize_and_notify_task(page_results: list, request_id: str, guid: str, web
     state = StateManager(request_id)
     page_indices = [res['page_index'] for res in page_results]
     all_pages = state.load_all_page_results(page_indices)
-
+ 
     # Join the text parts from all pages
     original_text = "\n\n--- PAGE BREAK ---\n\n".join([p['text'] for p in all_pages])
 
