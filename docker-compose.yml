@@ -41,19 +41,21 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      pull: false
       args:
         REQ_FILE: requirements/api.txt
+    pull_policy: never
     container_name: ocr_api
-    restart: unless-stoppedlp
-    working_dir: /home/appuser
+    restart: unless-stopped
+    working_dir: /app
     command: gunicorn -w 4 -k uvicorn.workers.UvicornWorker app.main:app --bind 0.0.0.0:8084
     ports:
       - "8000:8084"
     env_file: .env
     environment:
-      - PYTHONPATH=/home/appuser
+      - PYTHONPATH=/app
     volumes:
-      - ./logs:/home/appuser/logs
+      - ./logs:/app/logs
     depends_on:
       redis: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
@@ -68,19 +70,21 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      pull: false
       args:
         REQ_FILE: requirements/worker.txt
+    pull_policy: never
     container_name: ocr_worker_pipeline
     restart: unless-stopped
-    working_dir: /home/appuser
+    working_dir: /app
     command: python -m celery -A app.worker.celery_app worker -l info -Q ocr_pipeline -c 1
     env_file: .env
     environment:
-      - PYTHONPATH=/home/appuser
+      - PYTHONPATH=/app
     volumes:
-      - ./weights:/home/appuser/weights:ro
-      - ./debug:/home/appuser/debug
-      - ./logs:/home/appuser/logs
+      - ./weights:/app/weights:ro
+      - ./debug:/app/debug
+      - ./logs:/app/logs
     gpus: all
     deploy:
       resources:
@@ -99,18 +103,20 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      pull: false
       args:
         REQ_FILE: requirements/worker.txt
+    pull_policy: never
     container_name: ocr_worker_dispatch
     restart: unless-stopped
-    working_dir: /home/appuser
+    working_dir: /app
     command: python -m celery -A app.worker.celery_app worker -l info -Q dispatch -c 4
     env_file: .env
     environment:
-      - PYTHONPATH=/home/appuser
+      - PYTHONPATH=/app
     volumes:
-      - ./debug:/home/appuser/debug
-      - ./logs:/home/appuser/logs
+      - ./debug:/app/debug
+      - ./logs:/app/logs
     deploy:
       resources:
         limits: { cpus: '1.0', memory: 4G }
@@ -122,17 +128,19 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      pull: false
       args:
         REQ_FILE: requirements/worker.txt
+    pull_policy: never
     container_name: ocr_worker_webhooks
     restart: unless-stopped
-    working_dir: /home/appuser
+    working_dir: /app
     command: python -m celery -A app.worker.celery_app worker -l info -Q webhooks -c 4
     env_file: .env
     environment:
-      - PYTHONPATH=/home/appuser
+      - PYTHONPATH=/app
     volumes:
-      - ./logs:/home/appuser/logs
+      - ./logs:/app/logs
     deploy:
       resources:
         limits: { cpus: '1.0', memory: 2G }

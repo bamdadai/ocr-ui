@@ -26,28 +26,30 @@ RUN rm -f /etc/apt/sources.list.d/cuda* /etc/apt/sources.list.d/nvidia* || true 
 ENV VIRTUAL_ENV=/opt/venv
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 WORKDIR /opt
-COPY requirements/ ./requirements/
-RUN python3 -m venv "$VIRTUAL_ENV" \
-    && . "$VIRTUAL_ENV/bin/activate" \
-    && pip install --upgrade pip \
-    && pip install --timeout=600 -r ${REQ_FILE} \
-    && pip install --default-timeout=100 --no-cache-dir --index-url https://download.pytorch.org/whl/cu124 torch==2.6.0 torchvision==0.21.0 \
-    && pip install --default-timeout=100 --no-cache-dir --index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/ paddlepaddle-gpu==3.0.0
 
-# 3) Create non-root user and copy application code
-RUN useradd --create-home --shell /bin/bash appuser
-WORKDIR /home/appuser/
-COPY --chown=appuser:appuser assets/ ./assets/
-COPY --chown=appuser:appuser app/ ./app/
-COPY --chown=appuser:appuser static/ ./static/
-COPY --chown=appuser:appuser templates/ ./templates/
-COPY --chown=appuser:appuser master_config.json ./master_config.json
+# Create virtual environment (cached separately)
+RUN python3 -m venv "$VIRTUAL_ENV"
+
+# Copy requirements files for better layer caching
+COPY requirements/ ./requirements/
+
+
+# Install Python dependencies (will be cached if requirements don't change)
+RUN "$VIRTUAL_ENV/bin/pip" install --timeout=600 -r ${REQ_FILE}
+
+# Install PaddlePaddle GPU (separate layer to allow caching of above layers)
+RUN "$VIRTUAL_ENV/bin/pip" install --default-timeout=100 --no-cache-dir --index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/ paddlepaddle-gpu==3.0.0
+
+# 3) Copy application code
+WORKDIR /app
+COPY assets/ ./assets/
+COPY app/ ./app/
+COPY static/ ./static/
+COPY templates/ ./templates/
+COPY master_config.json ./master_config.json
 
 # Ensure project root is importable for Celery/Gunicorn processes
-ENV PYTHONPATH=/home/appuser
-
-# 4) Switch to non-root user and expose port
-USER appuser
+ENV PYTHONPATH=/app
 EXPOSE 8084
 
 # 5) Default command (overridden by compose for workers)

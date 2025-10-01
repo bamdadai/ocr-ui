@@ -183,7 +183,7 @@ def finalize_and_notify_task(page_results: list, request_id: str, guid: str, web
     all_pages = state.load_all_page_results(page_indices)
  
     # Join the text parts from all pages
-    original_text = "\n\n--- PAGE BREAK ---\n\n".join([p['text'] for p in all_pages])
+    original_text = "\n\nصفحه\n\n".join([p['text'] for p in all_pages])
 
     # --- FINAL ENCODING FIX ---
     # This standard pattern corrects text that was decoded incorrectly as Latin-1
