@@ -26,27 +26,17 @@ RUN rm -f /etc/apt/sources.list.d/cuda* /etc/apt/sources.list.d/nvidia* || true 
 ENV VIRTUAL_ENV=/opt/venv
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 WORKDIR /opt
-
-# Create virtual environment (cached separately)
-RUN python3 -m venv "$VIRTUAL_ENV"
-
-# Copy requirements files for better layer caching
+RUN python3 -m venv "$VIRTUAL_ENV" && . "$VIRTUAL_ENV/bin/activate" && pip install --upgrade pip
+RUN . "$VIRTUAL_ENV/bin/activate" && pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cu124
 COPY requirements/ ./requirements/
+RUN . "$VIRTUAL_ENV/bin/activate" && pip install --timeout=600 -r ${REQ_FILE}
 
-
-# Install Python dependencies (will be cached if requirements don't change)
-RUN "$VIRTUAL_ENV/bin/pip" install --timeout=600 -r ${REQ_FILE}
-
-# Install PaddlePaddle GPU (separate layer to allow caching of above layers)
-RUN "$VIRTUAL_ENV/bin/pip" install --default-timeout=100 --no-cache-dir --index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/ paddlepaddle-gpu==3.0.0
-
-# 3) Copy application code
 WORKDIR /app
-COPY assets/ ./assets/
-COPY app/ ./app/
-COPY static/ ./static/
-COPY templates/ ./templates/
-COPY master_config.json ./master_config.json
+COPY  assets/ ./assets/
+COPY  app/ ./app/
+COPY  static/ ./static/
+COPY  templates/ ./templates/
+COPY  master_config.json ./master_config.json
 
 # Ensure project root is importable for Celery/Gunicorn processes
 ENV PYTHONPATH=/app

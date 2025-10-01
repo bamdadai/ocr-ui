@@ -7,8 +7,6 @@
 
 # --- ML/DL & Image Processing ---
 # Pinning versions is crucial for stability in ML libraries. 
-# torch==2.6.0   # Installed in Dockerfile with CUDA (cu124)
-# torchvision==0.21.0  # Installed in Dockerfile with CUDA (cu124)
 pytorch-lightning==2.5.2 
 ultralytics==8.3.67
 opencv-python==4.9.0.80
