@@ -111,6 +111,9 @@ def postprocess_ocr_text(text: str) -> str:
     if not text:
         return text
 
+    # Normalize spacing: replace multiple consecutive spaces with at most 2 spaces
+    text = re.sub(r' {2,}', '  ', text)
+
     return text.strip()
 
 # --- Orchestrator and Finalizer Tasks (MODIFIED) ---
