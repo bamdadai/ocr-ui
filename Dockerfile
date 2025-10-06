@@ -31,7 +31,7 @@ RUN . "$VIRTUAL_ENV/bin/activate" && python -m pip install paddlepaddle==3.2.0 -
 RUN . "$VIRTUAL_ENV/bin/activate" && pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cu126
 COPY requirements/ ./requirements/
 RUN . "$VIRTUAL_ENV/bin/activate" && pip install --timeout=600 -r ${REQ_FILE}
-
+RUN . "$VIRTUAL_ENV/bin/activate" && pip install paddleocr==3.2.0
 WORKDIR /app
 COPY  assets/ ./assets/
 COPY  app/ ./app/
