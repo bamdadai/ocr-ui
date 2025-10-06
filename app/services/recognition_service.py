@@ -3,6 +3,7 @@ import torch
 import numpy as np
 from PIL import Image
 import structlog
+import re
 
 from app.strhub.data.module_data import SceneTextDataModule
 from app.strhub.models.utils import load_from_checkpoint
@@ -82,6 +83,9 @@ class RecognitionService:
                     # If confidence is below the threshold, discard the label
                     if final_conf < self.min_conf:
                         labels[i] = ""
+
+                    # Remove standalone 'x' or 'X' characters from individual predictions
+                    labels[i] = re.sub(r'\b[xX]\b', '', labels[i])
 
                 all_labels.extend(labels)
                 all_confidences.extend(processed_confidences)

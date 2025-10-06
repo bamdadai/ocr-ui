@@ -143,6 +143,9 @@ class DetectionService:
         self.line_merge_y_thresh: float = float(merge_cfg.get('y_thresh', 0.005))
         self.line_merge_iou_thresh: float = float(merge_cfg.get('iou_thresh', 0.03))
 
+        # --- Word detection configuration ---
+        word_cfg = config.get('word_detect', {})
+
         logger.info("detection_service.initialized",
                     line_tiling_enabled=self.line_tiling_enabled,
                     line_tiles=self.line_tiles,
@@ -232,18 +235,20 @@ class DetectionService:
 
     @time_method
     def _execute_single_image_prediction(
-        self, 
-        image: np.ndarray, 
-        model: YOLO, 
-        model_params: Dict, 
+        self,
+        image: np.ndarray,
+        model: YOLO,
+        model_params: Dict,
         post_process_func: Callable,
         debug_path: str,
         debug_draw_func: Callable,
         model_type: ModelType
     ) -> List:
         start = time.time()
+
         results: List[Results] = model(image, **model_params)
         result = results[0]
+
         # Optional class filter
         filtered = self._filter_by_classes(result, model_type)
         post_processed = post_process_func(filtered)
@@ -586,6 +591,7 @@ class DetectionService:
                     res = []
                 results.append(res)
         return results
+
 
     def _process_batch_sequentially(self, images: List[np.ndarray], processor_function: Callable) -> List:
         results: List = []

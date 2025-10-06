@@ -187,7 +187,6 @@ def finalize_and_notify_task(page_results: list, request_id: str, guid: str, web
     # ---------------------------
 
     # --- POSTPROCESSING ---
-    # Remove standalone 'x' or 'X' characters from OCR output
     full_text = postprocess_ocr_text(full_text)
     # ---------------------------
 
