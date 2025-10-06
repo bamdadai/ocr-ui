@@ -68,24 +68,6 @@ def fix_period_positioning(text: str) -> str:
     period_before_number_pattern = re.compile(r'(\.)(\s*)([۰-۹]+(?:\s*[۰-۹]+)*)')
     return period_before_number_pattern.sub(move_period_after_number, text)
 
-def fix_colon_positioning(text: str) -> str:
-    """Moves colons from before Persian words to after Persian words."""
-    # Pattern to match colon followed by optional spaces and then Persian word
-    # This handles cases like ":کدرهگیری" -> "کدرهگیری:" or ": کلمه" -> "کلمه:"
-    def move_colon_after_word(match):
-        colon = match.group(1)  # The colon
-        spaces = match.group(2)  # Optional spaces after colon
-        word_part = match.group(3)  # The Persian word part
-        
-        # Remove spaces from the word part and put colon after
-        clean_word = re.sub(r'\s+', '', word_part)
-        return clean_word + colon
-    
-    # Pattern: colon + optional spaces + Persian word (Persian/Arabic characters)
-    # Persian/Arabic Unicode range: \u0600-\u06FF (includes Persian, Arabic, and related scripts)
-    colon_before_word_pattern = re.compile(r'(:)(\s*)([\u0600-\u06FF]+(?:\s*[\u0600-\u06FF]+)*)')
-    return colon_before_word_pattern.sub(move_colon_after_word, text)
-
 def fix_dash_comma_spacing(text: str) -> str:
     """Removes spaces around dashes and Persian commas, and handles spaced patterns like - - - or ، ، ،."""
     # Pattern to match spaces around dashes and Persian commas

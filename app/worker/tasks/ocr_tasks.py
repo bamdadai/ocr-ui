@@ -112,7 +112,7 @@ def postprocess_ocr_text(text: str, custom_replacements: dict = None, replacemen
         return text
 
     # Import here to avoid circular imports
-    from app.utils.text_processing import join_spaced_numbers, fix_dash_positioning, fix_period_positioning, fix_colon_positioning, fix_dash_comma_spacing, apply_custom_replacements
+    from app.utils.text_processing import join_spaced_numbers, fix_dash_positioning, fix_period_positioning, fix_dash_comma_spacing, apply_custom_replacements
 
     # Join spaced numbers first
     text = join_spaced_numbers(text)
@@ -122,9 +122,6 @@ def postprocess_ocr_text(text: str, custom_replacements: dict = None, replacemen
     
     # Fix period positioning (move periods from before Persian numbers to after)
     text = fix_period_positioning(text)
-    
-    # Fix colon positioning (move colons from before Persian words to after)
-    text = fix_colon_positioning(text)
     
     # Fix dash and comma spacing (remove spaces around dashes and Persian commas)
     text = fix_dash_comma_spacing(text)
