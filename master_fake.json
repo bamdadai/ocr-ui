@@ -11,6 +11,13 @@
             "mask_dilation": 0,
             "batch": 8
         },
+        "paddle_ocr": {
+            "model_name": "PP-OCRv5_server_det",
+            "reading_direction": "rtl",
+            "pad": 2,
+            "sort_reading_order": true,
+            "model_kwargs": {}
+        },
         "line_detect": {
             "path": "weights/line_detection.pt",
             "conf": 0.2,

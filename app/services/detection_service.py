@@ -6,13 +6,14 @@ import structlog
 import time
 import os
 import functools
-from typing import List, Callable, Dict, Any, Literal, Optional, Sequence, Tuple
+from typing import List, Callable, Dict, Any, Literal, Optional, Sequence, Tuple, Iterable
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from ultralytics import YOLO
 from ultralytics.engine.results import Results
 from pathlib import Path
 from torchvision.ops import nms
+from paddleocr import TextDetection
 
 # --- Centralized imports from utility modules ---
 from app.utils.visualization import draw_polygons, draw_boxes
@@ -87,10 +88,13 @@ class DetectionService:
         self.timing_enabled = config.get('timing_enabled', True)  # Enable method timing by default
         logger.info("detection_service.init", debug=self.debug, debug_word_path=config.get('debug_word_path'), debug_line_path=config.get('debug_line_path'))
 
+        # Initialize YOLO models for word detection
         self.models = {
             'word': self._load_yolo_model(config['word_detect']['path']),
-            'line': self._load_yolo_model(config['line_detect']['path'])
         }
+
+        # Initialize PaddleOCR for line detection
+        self.paddle_model = self._load_paddle_model(config.get('paddle_ocr', {}))
         self.model_params = {
             'word': {
                 'iou': config['word_detect']['iou'],
@@ -98,23 +102,21 @@ class DetectionService:
                 'nms': config['word_detect'].get('nms', True),
                 'task': 'segment',
                 'retina_masks': True
-            },
-            'line': {
-                'iou': config['line_detect']['iou'],
-                'conf': config['line_detect']['conf'],
-                'nms': config['line_detect'].get('nms', True),
-                'retina_masks': True
             }
         }
         # Optional target classes for filtering; can be int ids or class names
         # If omitted, we do NOT filter by class to avoid dropping valid detections
         self.target_classes: Dict[ModelType, Optional[Sequence[int | str]]] = {
             'word': config['word_detect'].get('classes'),
-            'line': config['line_detect'].get('classes')
         }
+
+        # PaddleOCR configuration
+        paddle_config = config.get('paddle_ocr', {})
+        self.reading_direction: Literal["ltr", "rtl"] = paddle_config.get('reading_direction', 'rtl')
+        self.paddle_pad: int = paddle_config.get('pad', 2)
+        self.paddle_sort_reading_order: bool = paddle_config.get('sort_reading_order', True)
         self.post_process_funcs = {
             'word': self._post_process_word_results,
-            'line': self._post_process_line_results
         }
         self.debug_info = {
             'word': {'path': config['debug_word_path'], 'draw_func': lambda im, res: draw_polygons(im, res, color=(255, 0, 0))},
@@ -129,32 +131,24 @@ class DetectionService:
         self.max_batch_size = parallel_config['max_batch_size']
         self.memory_limit_mb = parallel_config['memory_limit_mb']
 
-        # --- Line detection tiling/merging configuration ---
-        line_cfg = config.get('line_detect', {})
-        tiling_cfg = line_cfg.get('tiling', {}) or {}
-        merge_cfg = line_cfg.get('merge', {}) or {}
-        self.line_tiling_enabled: bool = bool(tiling_cfg.get('enabled', False))
-        self.line_padding_ratio: float = float(line_cfg.get('padding_ratio', 0.1))
-        self.line_tiles: int = int(tiling_cfg.get('tiles', 3))
-        self.line_tile_overlap_ratio: float = float(tiling_cfg.get('overlap_ratio', 0.1))
-        self.line_tile_imgsz: int = int(tiling_cfg.get('imgsz', 1024))
-        self.line_tile_iou: float = float(tiling_cfg.get('iou', 0.4))  # per-tile YOLO IoU
-        self.line_nms_iou: float = float(tiling_cfg.get('nms_iou', 0.5))  # final NMS IoU
-        self.line_merge_y_thresh: float = float(merge_cfg.get('y_thresh', 0.005))
-        self.line_merge_iou_thresh: float = float(merge_cfg.get('iou_thresh', 0.03))
 
         # --- Word detection configuration ---
         word_cfg = config.get('word_detect', {})
 
-        logger.info("detection_service.initialized",
-                    line_tiling_enabled=self.line_tiling_enabled,
-                    line_tiles=self.line_tiles,
-                    )
+        logger.info("detection_service.initialized")
 
     @time_method
     def _load_yolo_model(self, model_path: str) -> YOLO:
         model = YOLO(model_path)
         return model.to(self.device)
+
+    @time_method
+    def _load_paddle_model(self, paddle_config: Dict[str, Any]) -> TextDetection:
+        """Load PaddleOCR TextDetection model with configuration."""
+        model_name = paddle_config.get('model_name', 'PP-OCRv5_server_det')
+        model_kwargs = paddle_config.get('model_kwargs', {})
+        logger.info("detection_service.loading_paddle_model", model_name=model_name)
+        return TextDetection(model_name=model_name, **model_kwargs)
 
     @time_method
     def predict_word_polygons(self, images: List[np.ndarray]) -> Dict[str, List]:
@@ -164,13 +158,67 @@ class DetectionService:
     @time_method
     def predict_line_boxes(self, images: List[np.ndarray]) -> Dict[str, List]:
         logger.info("detection_service.predicting", model_type="line", image_count=len(images))
-        # Use tiled predictor if enabled; otherwise fallback to single-shot prediction
-        if self.line_tiling_enabled:
-            processor_function = lambda img: self._predict_lines_tiled(img)
-            results = self._process_in_optimal_batches(images, processor_function)
-            return {'line_boxes': results}
-        else:
-            return {'line_boxes': self._predict(images, model_type='line')}
+        # Use PaddleOCR for line detection
+        processor_function = lambda img: self._predict_lines_paddle(img)
+        results = self._process_in_optimal_batches(images, processor_function)
+        return {'line_boxes': results}
+
+    @time_method
+    def _predict_lines_paddle(self, image: np.ndarray) -> List[List[float]]:
+        """Predict line boxes using PaddleOCR TextDetection."""
+        if image is None:
+            return []
+
+        # Ensure image is in BGR format as expected by PaddleOCR
+        img = self._ensure_bgr(image)
+        H, W = img.shape[:2]
+
+        # Run PaddleOCR detection
+        output = self.paddle_model.predict(img, batch_size=1)
+        if not isinstance(output, Iterable) or len(output) == 0:
+            logger.warning("detection_service.paddle_no_results")
+            return []
+
+        res = list(output)[0]
+        polys = self._extract_polys_from_result_obj(res)
+
+        # Clean polygons: ensure shape (4,2)
+        cleaned_polys = []
+        for p in polys:
+            p = np.array(p, dtype=np.float32).reshape(-1, 2)
+            if p.shape[0] >= 4:
+                if p.shape[0] > 4:
+                    rect = cv2.minAreaRect(p.astype(np.float32))
+                    box = cv2.boxPoints(rect)
+                    p = box.astype(np.float32)
+                cleaned_polys.append(p[:4])
+
+        # Sort by reading order if enabled
+        indices = list(range(len(cleaned_polys)))
+        if self.paddle_sort_reading_order and len(cleaned_polys) > 1:
+            indices = self._sort_reading_order(cleaned_polys, self.reading_direction)
+
+        # Convert polygons to bounding boxes
+        line_boxes = []
+        for idx in indices:
+            poly = cleaned_polys[idx]
+            x1, y1, x2, y2 = self._poly_to_bbox(poly, self.paddle_pad, W, H)
+            line_boxes.append([float(x1), float(y1), float(x2), float(y2)])
+
+        # Debug visualization
+        if self.debug and line_boxes:
+            try:
+                debug_path_str = str(self.debug_info['line']['path'])
+                os.makedirs(debug_path_str, exist_ok=True)
+                debug_img = image.copy()
+                debug_img = draw_boxes(debug_img, line_boxes, color=(0, 0, 255))
+                out_path = os.path.join(debug_path_str, f"line_paddle_{uuid.uuid4().hex[:8]}.jpg")
+                cv2.imwrite(out_path, debug_img)
+                logger.info("detection_service.line_paddle_debug_saved", path=out_path)
+            except Exception as e:
+                logger.warning("detection_service.line_paddle_debug_save_failed", error=str(e), exc_info=True)
+
+        return line_boxes
 
     @time_method
     def _predict(self, images: List[np.ndarray], model_type: ModelType) -> List:
@@ -315,13 +363,7 @@ class DetectionService:
             logger.warning("detection_service.word_bbox_fallback_failed", error=str(e))
             return []
 
-    @time_method
-    def _post_process_line_results(self, line_result: Results) -> List[List[float]]:
-        """Post-processes line detection results."""
-        if line_result.boxes is None: return []
-        return [box.xyxy[0].cpu().numpy().tolist() for box in line_result.boxes]
-
-    # --- Tiled line detection inspired by tests/line_detection.py ---
+    # --- Word detection utilities ---
     @time_method
     def _predict_lines_tiled(self, image: np.ndarray) -> List[List[float]]:
         if image is None:
@@ -602,4 +644,113 @@ class DetectionService:
                 logger.error("detection_service.sequential.failure", error=str(e))
                 results.append([])
         return results
+
+    # --- PaddleOCR utility methods (adapted from line_det.py) ---
+
+    def _ensure_bgr(self, img: np.ndarray) -> np.ndarray:
+        """Ensure uint8 BGR image (OpenCV convention)."""
+        if img is None:
+            raise ValueError("Input image is None.")
+        if img.dtype != np.uint8:
+            img = np.clip(img, 0, 255).astype(np.uint8)
+        if img.ndim == 2:
+            return cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+        if img.shape[2] == 3:
+            return img
+        if img.shape[2] == 4:
+            return cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+        return img
+
+    def _extract_polys_from_result_obj(self, res: Any) -> List[np.ndarray]:
+        """
+        Try to extract Nx4x2 polygons from various possible result object formats.
+        Supports PaddleOCR TextDetection result from the high-level API.
+        """
+        for attr in ("boxes", "polygons", "dt_polys"):
+            if hasattr(res, attr):
+                polys = getattr(res, attr)
+                if polys is not None:
+                    return [np.array(p, dtype=np.float32).reshape(-1, 2) for p in polys]
+
+        for key in ("boxes", "polygons", "dt_polys", "poly", "points"):
+            try:
+                val = res[key]  # type: ignore[index]
+                if val is not None:
+                    return [np.array(p, dtype=np.float32).reshape(-1, 2) for p in val]
+            except Exception:
+                pass
+
+        for method in ("to_dict", "as_dict"):
+            if hasattr(res, method) and callable(getattr(res, method)):
+                d = getattr(res, method)()
+                for key in ("boxes", "polygons", "dt_polys", "points"):
+                    if key in d and d[key] is not None:
+                        return [np.array(p, dtype=np.float32).reshape(-1, 2) for p in d[key]]
+
+        if hasattr(res, "__dict__"):
+            d = res.__dict__
+            for key in ("boxes", "polygons", "dt_polys", "points"):
+                if key in d and d[key] is not None:
+                    return [np.array(p, dtype=np.float32).reshape(-1, 2) for p in d[key]]
+
+        raise RuntimeError(
+            "Could not extract polygons from detection result. "
+            "Check the result object's attributes/keys."
+        )
+
+    def _sort_reading_order(
+        self,
+        polys: List[np.ndarray],
+        reading_direction: Literal["ltr", "rtl"] = "ltr",
+    ) -> List[int]:
+        """
+        Sort polygons row-wise top->bottom, then within each row by reading direction.
+        For Persian, use reading_direction="rtl".
+        Returns indices in sorted order.
+        """
+        centers = np.array([self._centroid(p) for p in polys])  # (N,2): x, y
+        ys = centers[:, 1]
+        xs = centers[:, 0]
+
+        # Estimate row tolerance from polygon heights
+        heights = np.array([float(np.max(p[:, 1]) - np.min(p[:, 1])) for p in polys])
+        row_tol = max(8.0, float(np.median(heights)) * 0.6)
+
+        # Assign a row id to each polygon
+        row_ids = np.round(ys / row_tol).astype(int)
+        rows = {}
+        for i, rid in enumerate(row_ids):
+            rows.setdefault(rid, []).append(i)
+
+        # Sort rows by their vertical position (increasing y)
+        sorted_row_keys = sorted(rows.keys(), key=lambda rid: np.median(ys[rows[rid]]))
+
+        ordered: List[int] = []
+        for rid in sorted_row_keys:
+            idxs = rows[rid]
+            # Within a row: LTR -> ascending x; RTL -> descending x
+            if reading_direction == "rtl":
+                idxs.sort(key=lambda i: xs[i], reverse=True)
+            else:
+                idxs.sort(key=lambda i: xs[i])
+            ordered.extend(idxs)
+        return ordered
+
+    def _poly_to_bbox(self, poly: np.ndarray, pad: int, W: int, H: int) -> Tuple[int, int, int, int]:
+        """Compute clamped XYXY bbox from polygon with padding."""
+        xs = poly[:, 0]
+        ys = poly[:, 1]
+        x1 = max(int(np.floor(xs.min())) - pad, 0)
+        y1 = max(int(np.floor(ys.min())) - pad, 0)
+        x2 = min(int(np.ceil(xs.max())) + pad, W - 1)
+        y2 = min(int(np.ceil(ys.max())) + pad, H - 1)
+        if x2 <= x1:
+            x2 = min(x1 + 1, W - 1)
+        if y2 <= y1:
+            y2 = min(y1 + 1, H - 1)
+        return x1, y1, x2, y2
+
+    def _centroid(self, poly: np.ndarray) -> Tuple[float, float]:
+        c = poly.mean(axis=0)
+        return float(c[0]), float(c[1])
 
