@@ -1,5 +1,8 @@
 # app/utils/text_processing.py
 import re
+import json
+import os
+from pathlib import Path
 import arabic_reshaper
 from bidi.algorithm import get_display
 
@@ -46,6 +49,43 @@ def fix_dash_positioning(text: str) -> str:
     dash_before_number_pattern = re.compile(r'(-)(\s*)([۰-۹0-9]+(?:\s*[۰-۹0-9]+)*)')
     return dash_before_number_pattern.sub(move_dash_after_number, text)
 
+
+def fix_period_positioning(text: str) -> str:
+    """Moves periods from before Persian numbers to after Persian numbers."""
+    # Pattern to match period followed by optional spaces and then Persian digits
+    # This handles cases like ".۱۲۳" -> "۱۲۳." or ". ۱ ۲ ۳" -> "۱۲۳."
+    def move_period_after_number(match):
+        period = match.group(1)  # The period
+        spaces = match.group(2)  # Optional spaces after period
+        number_part = match.group(3)  # The number part
+        
+        # Remove spaces from the number part and put period after
+        clean_number = re.sub(r'\s+', '', number_part)
+        return clean_number + period
+    
+    # Pattern: period + optional spaces + Persian digits (۰-۹) and any following digits/spaces
+    # Persian digits: ۰۱۲۳۴۵۶۷۸۹
+    period_before_number_pattern = re.compile(r'(\.)(\s*)([۰-۹]+(?:\s*[۰-۹]+)*)')
+    return period_before_number_pattern.sub(move_period_after_number, text)
+
+def fix_colon_positioning(text: str) -> str:
+    """Moves colons from before Persian words to after Persian words."""
+    # Pattern to match colon followed by optional spaces and then Persian word
+    # This handles cases like ":کدرهگیری" -> "کدرهگیری:" or ": کلمه" -> "کلمه:"
+    def move_colon_after_word(match):
+        colon = match.group(1)  # The colon
+        spaces = match.group(2)  # Optional spaces after colon
+        word_part = match.group(3)  # The Persian word part
+        
+        # Remove spaces from the word part and put colon after
+        clean_word = re.sub(r'\s+', '', word_part)
+        return clean_word + colon
+    
+    # Pattern: colon + optional spaces + Persian word (Persian/Arabic characters)
+    # Persian/Arabic Unicode range: \u0600-\u06FF (includes Persian, Arabic, and related scripts)
+    colon_before_word_pattern = re.compile(r'(:)(\s*)([\u0600-\u06FF]+(?:\s*[\u0600-\u06FF]+)*)')
+    return colon_before_word_pattern.sub(move_colon_after_word, text)
+
 def fix_dash_comma_spacing(text: str) -> str:
     """Removes spaces around dashes and Persian commas, and handles spaced patterns like - - - or ، ، ،."""
     # Pattern to match spaces around dashes and Persian commas
@@ -62,6 +102,64 @@ def fix_dash_comma_spacing(text: str) -> str:
     
     # Remove multiple consecutive Persian commas (without spaces): "،،" or "،،،" -> "،"
     text = re.sub(r'،+', '،', text)
+    
+    return text
+
+def load_replacements_from_json(json_file_path: str) -> dict:
+    """Loads replacement patterns from a JSON file.
+    
+    Args:
+        json_file_path: Path to the JSON file containing replacement patterns
+        
+    Returns:
+        Dictionary of replacement patterns
+        
+    Raises:
+        FileNotFoundError: If the JSON file doesn't exist
+        json.JSONDecodeError: If the JSON file is malformed
+    """
+    if not os.path.exists(json_file_path):
+        raise FileNotFoundError(f"Replacement file not found: {json_file_path}")
+    
+    with open(json_file_path, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+def apply_custom_replacements(text: str, replacement_dict: dict = None, json_file_path: str = None) -> str:
+    """Applies custom pattern replacements defined in a dictionary or JSON file.
+    
+    Args:
+        text: The input text to process
+        replacement_dict: Dictionary where keys are patterns to find and values are replacements
+                         Keys can be either strings (exact matches) or regex patterns
+        json_file_path: Path to JSON file containing replacement patterns (alternative to replacement_dict)
+    
+    Returns:
+        Text with custom replacements applied
+    """
+    # Load replacements from JSON file if provided
+    if json_file_path:
+        replacement_dict = load_replacements_from_json(json_file_path)
+    
+    if not replacement_dict:
+        return text
+    
+    # Flatten nested dictionaries if they exist
+    flat_replacements = {}
+    for key, value in replacement_dict.items():
+        if isinstance(value, dict):
+            # If it's a nested dictionary, flatten it
+            flat_replacements.update(value)
+        else:
+            # If it's a direct pattern-replacement pair
+            flat_replacements[key] = value
+    
+    for pattern, replacement in flat_replacements.items():
+        # If the pattern is a string, treat it as a literal replacement
+        if isinstance(pattern, str):
+            text = text.replace(pattern, replacement)
+        else:
+            # If it's a compiled regex or string that should be treated as regex
+            text = re.sub(pattern, replacement, text)
     
     return text
 

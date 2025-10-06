@@ -107,12 +107,12 @@ def send_webhook_result(self, webhook_url: str, payload: dict, **kwargs):
 
 # --- Postprocessing Functions ---
 
-def postprocess_ocr_text(text: str) -> str:
+def postprocess_ocr_text(text: str, custom_replacements: dict = None, replacements_json_path: str = None) -> str:
     if not text:
         return text
 
     # Import here to avoid circular imports
-    from app.utils.text_processing import join_spaced_numbers, fix_dash_positioning, fix_dash_comma_spacing
+    from app.utils.text_processing import join_spaced_numbers, fix_dash_positioning, fix_period_positioning, fix_colon_positioning, fix_dash_comma_spacing, apply_custom_replacements
 
     # Join spaced numbers first
     text = join_spaced_numbers(text)
@@ -120,8 +120,18 @@ def postprocess_ocr_text(text: str) -> str:
     # Fix dash positioning (move dashes from before numbers to after)
     text = fix_dash_positioning(text)
     
+    # Fix period positioning (move periods from before Persian numbers to after)
+    text = fix_period_positioning(text)
+    
+    # Fix colon positioning (move colons from before Persian words to after)
+    text = fix_colon_positioning(text)
+    
     # Fix dash and comma spacing (remove spaces around dashes and Persian commas)
     text = fix_dash_comma_spacing(text)
+    
+    # Apply custom replacements if provided (either dict or JSON file)
+    if custom_replacements or replacements_json_path:
+        text = apply_custom_replacements(text, custom_replacements, replacements_json_path)
 
     # Normalize spacing: replace multiple consecutive spaces with at most 2 spaces
     text = re.sub(r' {2,}', '  ', text)
