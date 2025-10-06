@@ -68,8 +68,8 @@ class Settings(BaseSettings):
     
     # Settings read from environment variables or the .env file
     APP_NAME: str = "Unified OCR Service"
-    CELERY_BROKER_URL: str = "amqp://guest:guest@localhost:5672//"
-    CELERY_BACKEND_URL: str = "redis://localhost:6379/0"
+    CELERY_BROKER_URL: str = "amqp://user:bambamai2025@rabbitmq:5672//"
+    CELERY_BACKEND_URL: str = "redis://redis:6379/0"
     LOG_FILE_PATH: Path = PROJECT_ROOT / "logs/app.log"
     SEARCHABLE_PDF_FONT_PATH: Path = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
     ALLOW_INSECURE_WEBHOOKS: bool = False
