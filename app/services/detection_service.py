@@ -147,8 +147,8 @@ class DetectionService:
         """Load PaddleOCR TextDetection model with configuration."""
         model_name = paddle_config.get('model_name', 'PP-OCRv5_server_det')
         model_kwargs = paddle_config.get('model_kwargs', {})
-        logger.info("detection_service.loading_paddle_model", model_name=model_name)
-        return TextDetection(model_name=model_name, **model_kwargs)
+        logger.info("detection_service.loading_paddle_model", model_kwargs=model_kwargs)
+        return TextDetection(**model_kwargs)
 
     @time_method
     def predict_word_polygons(self, images: List[np.ndarray]) -> Dict[str, List]:
