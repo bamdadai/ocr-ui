@@ -46,6 +46,25 @@ def fix_dash_positioning(text: str) -> str:
     dash_before_number_pattern = re.compile(r'(-)(\s*)([۰-۹0-9]+(?:\s*[۰-۹0-9]+)*)')
     return dash_before_number_pattern.sub(move_dash_after_number, text)
 
+def fix_dash_comma_spacing(text: str) -> str:
+    """Removes spaces around dashes and Persian commas, and handles spaced patterns like - - - or ، ، ،."""
+    # Pattern to match spaces around dashes and Persian commas
+    # This handles cases like "word - word" -> "word-word" or "word ، word" -> "word،word"
+    
+    # Handle spaced dash patterns: "- - -" or "- -" -> "-"
+    text = re.sub(r'(\s*-\s*)+', '-', text)
+    
+    # Handle spaced Persian comma patterns: "، ، ،" or "، ،" -> "،"
+    text = re.sub(r'(\s*،\s*)+', '،', text)
+    
+    # Remove multiple consecutive dashes (without spaces): "--" or "---" -> "-"
+    text = re.sub(r'-+', '-', text)
+    
+    # Remove multiple consecutive Persian commas (without spaces): "،،" or "،،،" -> "،"
+    text = re.sub(r'،+', '،', text)
+    
+    return text
+
 def fix_mixed_text_order(text: str) -> str:
     """Corrects display order for strings with mixed RTL and LTR text."""
     persian_pattern = re.compile(r'[\u0600-\u06FF]+')

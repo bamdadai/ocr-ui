@@ -112,13 +112,16 @@ def postprocess_ocr_text(text: str) -> str:
         return text
 
     # Import here to avoid circular imports
-    from app.utils.text_processing import join_spaced_numbers, fix_dash_positioning
+    from app.utils.text_processing import join_spaced_numbers, fix_dash_positioning, fix_dash_comma_spacing
 
     # Join spaced numbers first
     text = join_spaced_numbers(text)
     
     # Fix dash positioning (move dashes from before numbers to after)
     text = fix_dash_positioning(text)
+    
+    # Fix dash and comma spacing (remove spaces around dashes and Persian commas)
+    text = fix_dash_comma_spacing(text)
 
     # Normalize spacing: replace multiple consecutive spaces with at most 2 spaces
     text = re.sub(r' {2,}', '  ', text)
