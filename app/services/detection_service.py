@@ -92,8 +92,19 @@ class DetectionService:
             'line': self._load_yolo_model(config['line_detect']['path'])
         }
         self.model_params = {
-            'word': {'iou': config['word_detect']['iou'], 'conf': config['word_detect']['conf'], 'task': 'segment', 'retina_masks': True},
-            'line': {'iou': config['line_detect']['iou'], 'conf': config['line_detect']['conf'], 'retina_masks': True}
+            'word': {
+                'iou': config['word_detect']['iou'],
+                'conf': config['word_detect']['conf'],
+                'nms': config['word_detect'].get('nms', True),
+                'task': 'segment',
+                'retina_masks': True
+            },
+            'line': {
+                'iou': config['line_detect']['iou'],
+                'conf': config['line_detect']['conf'],
+                'nms': config['line_detect'].get('nms', True),
+                'retina_masks': True
+            }
         }
         # Optional target classes for filtering; can be int ids or class names
         # If omitted, we do NOT filter by class to avoid dropping valid detections
@@ -110,6 +121,7 @@ class DetectionService:
             'line': {'path': config['debug_line_path'], 'draw_func': lambda im, res: draw_boxes(im, res, color=(0, 0, 255))}
         }
         self.merging_iou = config['word_detect']['merging_iou']
+        self.remove_nested_boxes = config['word_detect'].get('remove_nested', True)
 
         parallel_config = config['parallel_processing']
         self.parallel_enabled = parallel_config['enabled']
@@ -265,7 +277,12 @@ class DetectionService:
         try:
             if word_result.masks is not None:
                 polygons = get_polygons_from_masks(word_result.masks)
-                merged_polygons = merge_overlapping_masks(polygons, iou_threshold=self.merging_iou)
+                logger.info("detection_service.word_polygons_before_merge", 
+                           count=len(polygons), 
+                           dice_threshold=self.merging_iou)
+                merged_polygons = merge_overlapping_masks(polygons, dice_threshold=self.merging_iou)
+                logger.info("detection_service.word_polygons_after_merge", 
+                           count=len(merged_polygons))
                 return [poly.reshape(-1).astype(int).tolist() for poly in merged_polygons]
         except Exception as e:
             logger.warning("detection_service.word_masks_postprocess_failed", error=str(e))
@@ -275,6 +292,12 @@ class DetectionService:
             if word_result.boxes is None or word_result.boxes.data is None or word_result.boxes.data.numel() == 0:
                 return []
             boxes_xyxy = word_result.boxes.xyxy.cpu().numpy()
+            confidences = word_result.boxes.conf.cpu().numpy()
+            
+            # Remove nested boxes (small boxes inside large ones)
+            if len(boxes_xyxy) > 1 and self.remove_nested_boxes:
+                boxes_xyxy, confidences = self._remove_nested_boxes(boxes_xyxy, confidences)
+            
             rect_polys: List[List[int]] = []
             for x1, y1, x2, y2 in boxes_xyxy:
                 x1i, y1i, x2i, y2i = int(x1), int(y1), int(x2), int(y2)
@@ -456,6 +479,58 @@ class DetectionService:
                     merged_mask = cv2.convexHull(all_pts)
             merged.append((merged_box, merged_mask))
         return merged
+
+    @time_method
+    def _remove_nested_boxes(self, boxes: np.ndarray, confidences: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Removes small boxes that are completely inside larger boxes.
+        This handles cases where NMS fails due to very different box sizes.
+        """
+        if len(boxes) <= 1:
+            return boxes, confidences
+            
+        # Sort by confidence (highest first)
+        sorted_indices = np.argsort(confidences)[::-1]
+        boxes_sorted = boxes[sorted_indices]
+        confidences_sorted = confidences[sorted_indices]
+        
+        keep_mask = np.ones(len(boxes), dtype=bool)
+        
+        for i in range(len(boxes_sorted)):
+            if not keep_mask[sorted_indices[i]]:
+                continue
+                
+            box_i = boxes_sorted[i]
+            area_i = (box_i[2] - box_i[0]) * (box_i[3] - box_i[1])
+            
+            for j in range(i + 1, len(boxes_sorted)):
+                if not keep_mask[sorted_indices[j]]:
+                    continue
+                    
+                box_j = boxes_sorted[j]
+                area_j = (box_j[2] - box_j[0]) * (box_j[3] - box_j[1])
+                
+                # Check if box_j is completely inside box_i
+                if (box_j[0] >= box_i[0] and box_j[1] >= box_i[1] and 
+                    box_j[2] <= box_i[2] and box_j[3] <= box_i[3]):
+                    
+                    # Remove the smaller box (box_j)
+                    keep_mask[sorted_indices[j]] = False
+                    logger.debug("detection_service.removed_nested_box", 
+                               outer_box=box_i.tolist(), 
+                               inner_box=box_j.tolist(),
+                               outer_area=area_i,
+                               inner_area=area_j)
+        
+        final_boxes = boxes[keep_mask]
+        final_confidences = confidences[keep_mask]
+        
+        if len(final_boxes) < len(boxes):
+            logger.info("detection_service.nested_boxes_removed", 
+                       original_count=len(boxes), 
+                       final_count=len(final_boxes))
+        
+        return final_boxes, final_confidences
 
     @time_method
     def _compute_iou(self, boxA: np.ndarray, boxB: np.ndarray) -> float:

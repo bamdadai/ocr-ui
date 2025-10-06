@@ -62,11 +62,17 @@ def merge_overlapping_masks(masks: List[np.ndarray], dice_threshold: float = 0.5
         root_i, root_j = find(i), find(j)
         if root_i != root_j: parent[root_j] = root_i
 
+    merges_count = 0
     for i in range(n):
         for j in range(i + 1, n):
             # Note: `dice_score` is now called directly as it's in the same module
-            if dice_score(masks[i], masks[j]) > dice_threshold:
+            dice_val = dice_score(masks[i], masks[j])
+            if dice_val > dice_threshold:
                 union(i, j)
+                merges_count += 1
+                print(f"DEBUG: Merged masks {i} and {j}, dice_score={dice_val:.3f}")
+    
+    print(f"DEBUG: Total merges performed: {merges_count}")
                 
     groups = defaultdict(list)
     for i in range(n):
