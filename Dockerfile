@@ -3,7 +3,7 @@
 # ====================================================================
 
 # Base image with CUDA 12.4 + cuDNN on Ubuntu 22.04
-FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
+FROM nvidia/cuda:12.6.0-cudnn-runtime-ubuntu22.04
 
 # Allow switching requirement set at build-time (api.txt, worker.txt, base.txt)
 ARG REQ_FILE=requirements/base.txt
@@ -27,7 +27,8 @@ ENV VIRTUAL_ENV=/opt/venv
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 WORKDIR /opt
 RUN python3 -m venv "$VIRTUAL_ENV" && . "$VIRTUAL_ENV/bin/activate" && pip install --upgrade pip
-RUN . "$VIRTUAL_ENV/bin/activate" && pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cu124
+RUN . "$VIRTUAL_ENV/bin/activate" && python -m pip install paddlepaddle==3.2.0 -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
+RUN . "$VIRTUAL_ENV/bin/activate" && pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cu126
 COPY requirements/ ./requirements/
 RUN . "$VIRTUAL_ENV/bin/activate" && pip install --timeout=600 -r ${REQ_FILE}
 
