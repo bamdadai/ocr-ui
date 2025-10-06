@@ -108,19 +108,8 @@ def send_webhook_result(self, webhook_url: str, payload: dict, **kwargs):
 # --- Postprocessing Functions ---
 
 def postprocess_ocr_text(text: str) -> str:
-    """
-    Remove standalone 'x' or 'X' characters from OCR text.
-    Removes single 'x'/'X' characters and sequences of two or more 'x'/'X' characters.
-    Only removes 'x'/'X' that appear as separate characters, not as part of words.
-    """
     if not text:
         return text
-
-    # Remove sequences of two or more x/X characters (xx, xxx, XX, xX, etc.)
-    text = re.sub(r'[xX]{2,}', '', text)
-
-    # Remove standalone single x/X characters surrounded by whitespace
-    text = re.sub(r'\s+[xX]\s+', '', text)
 
     return text.strip()
 

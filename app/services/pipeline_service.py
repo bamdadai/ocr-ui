@@ -219,34 +219,14 @@ class PipelineService:
             for poly in word_polygons
         ]
         
-        # Filter out word crops smaller than 12x12 pixels
-        MIN_CROP_SIZE = 12
-        filtered_word_data = []
-        for item in word_data:
-            crop = item['crop']
-            height, width = crop.shape[:2]
-            if height >= MIN_CROP_SIZE and width >= MIN_CROP_SIZE:
-                filtered_word_data.append(item)
-            else:
-                logger.debug(
-                    "pipeline_service.word_crop_too_small",
-                    width=width,
-                    height=height,
-                    min_size=MIN_CROP_SIZE
-                )
-        
-        # If no valid crops remain, return empty results
-        if not filtered_word_data:
-            return "", 0.0, []
-        
-        all_word_crops = [item['crop'] for item in filtered_word_data]
+        all_word_crops = [item['crop'] for item in word_data]
         # Recognition is ensured to be loaded by recognize_page
         word_texts_with_probs = self.recognition_service(all_word_crops)  # type: ignore[misc]
 
-        for i, item in enumerate(filtered_word_data):
+        for i, item in enumerate(word_data):
             item['text'], item['prob'] = word_texts_with_probs[i]
 
-        sorted_words = sorted(filtered_word_data, key=lambda x: x['box'][0], reverse=True)
+        sorted_words = sorted(word_data, key=lambda x: x['box'][0], reverse=True)
         
         text_line = " ".join(item['text'] for item in sorted_words)
         text_line = fix_mixed_text_order(text_line)
@@ -254,4 +234,4 @@ class PipelineService:
         line_probs = [item['prob'] for item in sorted_words]
         line_conf = sum(line_probs) / len(line_probs) if line_probs else 0.0
         
-        return text_line, line_conf, filtered_word_data
+        return text_line, line_conf, word_data
