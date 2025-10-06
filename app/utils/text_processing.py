@@ -12,6 +12,38 @@ def make_farsi_text_for_pdf(text: str) -> str:
     """Prepares Farsi text for libraries like FPDF that need reshaping."""
     return arabic_reshaper.reshape(text)
 
+def join_spaced_numbers(text: str) -> str:
+    """Removes spaces between numbers and joins them together."""
+    # Pattern to match sequences of digits separated by spaces
+    # This handles cases like "1 2 3" -> "123" or "1 2 3 . 4 5" -> "123.45"
+    def replace_number_sequence(match):
+        # Extract the matched sequence and remove spaces between digits
+        sequence = match.group(0)
+        # Replace spaces between digits with nothing
+        return re.sub(r'(?<=\d)\s+(?=\d)', '', sequence)
+
+    # Use regex to find sequences that contain digits and spaces
+    # This pattern finds sequences that start and end with digits and contain spaces
+    number_sequence_pattern = re.compile(r'\d+(?:\s+\d+)+')
+    return number_sequence_pattern.sub(replace_number_sequence, text)
+
+def fix_dash_positioning(text: str) -> str:
+    """Moves dashes from before numbers to after numbers."""
+    # Pattern to match dash followed by optional spaces and then digits
+    # This handles cases like "-123" -> "123-" or "- 1 2 3" -> "123-"
+    def move_dash_after_number(match):
+        dash = match.group(1)  # The dash
+        spaces = match.group(2)  # Optional spaces after dash
+        number_part = match.group(3)  # The number part
+        
+        # Remove spaces from the number part and put dash after
+        clean_number = re.sub(r'\s+', '', number_part)
+        return clean_number + dash
+    
+    # Pattern: dash + optional spaces + digits (and any following digits/spaces)
+    dash_before_number_pattern = re.compile(r'(-)(\s*)(\d+(?:\s*\d+)*)')
+    return dash_before_number_pattern.sub(move_dash_after_number, text)
+
 def fix_mixed_text_order(text: str) -> str:
     """Corrects display order for strings with mixed RTL and LTR text."""
     persian_pattern = re.compile(r'[\u0600-\u06FF]+')
@@ -27,7 +59,7 @@ def fix_mixed_text_order(text: str) -> str:
             temp_segment = [token]
             is_persian = current_is_persian
     if temp_segment: segments.append((is_persian, temp_segment))
-    
+
     fixed_segments = []
     for is_persian, segment in segments:
         if not is_persian: segment.reverse()
