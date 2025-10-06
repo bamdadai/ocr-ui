@@ -85,7 +85,9 @@ def recognize_page_task(self, context: dict) -> dict:
     pipeline = get_pipeline_service()
     state = StateManager(context["request_id"])
     image = state.load_page_image(context["page_index"])
-    full_text, confidence = pipeline.recognize_page(image, context["line_boxes"], context["word_polygons"])
+    # Create page_id for debug output
+    page_id = f"page{context['page_index']}"
+    full_text, confidence = pipeline.recognize_page(image, context["line_boxes"], context["word_polygons"], page_id=page_id)
     state.save_page_result(context["page_index"], full_text, confidence)
     logger.info("recognize_page.success", page=context["page_index"] + 1, confidence=confidence)
     return {"page_index": context["page_index"]}

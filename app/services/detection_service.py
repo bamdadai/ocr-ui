@@ -239,9 +239,10 @@ class DetectionService:
         if self.debug:
             try:
                 fname = f"{model_type}_debug_{uuid.uuid4().hex[:8]}.jpg"
-                out_path = os.path.join(str(self.debug_info[model_type]['path']), fname)
+                debug_path_str = str(self.debug_info[model_type]['path'])
+                out_path = os.path.join(debug_path_str, fname)
                 logger.info("detection_service.debug_saving", model_type=model_type, path=out_path)
-                os.makedirs(self.debug_info[model_type]['path'], exist_ok=True)
+                os.makedirs(debug_path_str, exist_ok=True)
                 debug_image = image.copy()
                 debug_image = debug_draw_func(debug_image, post_processed)
                 success = cv2.imwrite(out_path, debug_image)
@@ -250,7 +251,7 @@ class DetectionService:
                 else:
                     logger.warning("detection_service.debug_save_failed", model_type=model_type, path=out_path, reason="cv2.imwrite returned False")
             except Exception as e:
-                logger.warning("detection_service.debug_save_failed", model_type=model_type, error=str(e))
+                logger.warning("detection_service.debug_save_failed", model_type=model_type, error=str(e), exc_info=True)
         logger.info("detection_service.single_image_done", model_type=model_type, duration_ms=int(duration * 1000))
         return post_processed
 
@@ -325,12 +326,14 @@ class DetectionService:
         # Optional debug output on original image
         if self.debug:
             try:
-                os.makedirs(self.debug_info['line']['path'], exist_ok=True)
+                debug_path_str = str(self.debug_info['line']['path'])
+                os.makedirs(debug_path_str, exist_ok=True)
                 dbg = draw_boxes(image.copy(), final_boxes, color=(0, 0, 255))
-                out_path = os.path.join(str(self.debug_info['line']['path']), f"line_tiled_{uuid.uuid4().hex[:8]}.jpg")
+                out_path = os.path.join(debug_path_str, f"line_tiled_{uuid.uuid4().hex[:8]}.jpg")
                 cv2.imwrite(out_path, dbg)
+                logger.info("detection_service.line_tiled_debug_saved", path=out_path)
             except Exception as e:
-                logger.warning("detection_service.line_tiled_debug_save_failed", error=str(e))
+                logger.warning("detection_service.line_tiled_debug_save_failed", error=str(e), exc_info=True)
         # Sort top-to-bottom similar to pipeline behavior
         final_boxes.sort(key=lambda b: b[1])
         return final_boxes

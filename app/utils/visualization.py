@@ -13,6 +13,7 @@ import cv2
 import numpy as np
 from matplotlib import font_manager as fm
 from matplotlib import pyplot as plt
+from matplotlib.patches import Rectangle
 
 from .common import batchify
 from .text_processing import make_farsi_text_for_display
@@ -100,3 +101,150 @@ def save_recognition_debug_image(crops: List[np.ndarray], results: List[Tuple[st
         unique_id = uuid.uuid4()
         fig.savefig(save_dir / f'recognition_debug_{unique_id}.jpg', bbox_inches='tight')
         plt.close(fig) # Close the figure to free up memory
+
+
+def save_page_recognition_result(
+    image: np.ndarray,
+    line_boxes: List[list],
+    text_of_lines: List[Tuple[str, float]],
+    save_dir: Path,
+    font_path: Path
+) -> None:
+    """
+    Renders the original page image with transcribed text overlaid and saves it.
+    
+    Args:
+        image: The original page image (BGR format from OpenCV)
+        line_boxes: List of line bounding boxes in [x1, y1, x2, y2] format
+        text_of_lines: List of (text, confidence) tuples for each line
+        save_dir: Directory to save the debug image
+        font_path: Path to the font file for rendering text (XB Niloofar.ttf)
+    """
+    if not line_boxes or not text_of_lines:
+        return
+    
+    save_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Create a figure with the image
+    fig, ax = plt.subplots(1, 1, figsize=(12, 16))
+    
+    # Convert BGR to RGB for matplotlib
+    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    ax.imshow(image_rgb)
+    
+    # Load the font for text rendering
+    try:
+        font_props = fm.FontProperties(fname=str(font_path), size=16)
+    except Exception:
+        # Fallback to default font if the specified font fails to load
+        font_props = fm.FontProperties(size=16)
+    
+    # Draw boxes and text for each line
+    for idx, (box, (text, conf)) in enumerate(zip(line_boxes, text_of_lines)):
+        if len(box) >= 4:
+            x1, y1, x2, y2 = box[:4]
+            
+            # Draw the line bounding box
+            rect = Rectangle((x1, y1), x2 - x1, y2 - y1, 
+                           linewidth=2, edgecolor='blue', facecolor='none', alpha=0.7)
+            ax.add_patch(rect)
+            
+            # Prepare the text for display (handle RTL text like Farsi)
+            display_text = make_farsi_text_for_display(text) if text else ""
+            
+            # Position text above the box
+            text_y = max(0, y1 - 5)
+            
+            # Add text with background for better visibility
+            ax.text(x1, text_y, display_text,
+                   fontproperties=font_props,
+                   color='white',
+                   verticalalignment='bottom',
+                   horizontalalignment='left',
+                   bbox=dict(boxstyle='round,pad=0.5', facecolor='blue', edgecolor='blue', alpha=0.8))
+    
+    ax.axis('off')
+    
+    # Save the figure with unique filename
+    unique_id = uuid.uuid4()
+    output_path = save_dir / f'page_recognition_{unique_id}.jpg'
+    fig.savefig(output_path, bbox_inches='tight', dpi=150, pad_inches=0.1)
+    plt.close(fig)
+
+
+def save_word_crops(
+    word_crops: List[np.ndarray],
+    word_texts: List[str],
+    save_dir: Path,
+    page_id: str = None
+) -> None:
+    """
+    Saves individual word crops as separate image files for debugging.
+    
+    Args:
+        word_crops: List of word crop images (BGR format from OpenCV)
+        word_texts: List of recognized text for each word
+        save_dir: Directory to save the word crop images
+        page_id: Optional identifier for the page (used in filename)
+    """
+    if not word_crops:
+        return
+    
+    save_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Create a unique batch identifier
+    batch_id = uuid.uuid4().hex[:8]
+    page_prefix = f"{page_id}_" if page_id else ""
+    
+    for idx, (crop, text) in enumerate(zip(word_crops, word_texts)):
+        try:
+            # Sanitize text for filename (remove special chars, limit length)
+            safe_text = "".join(c if c.isalnum() else "_" for c in text)[:20]
+            safe_text = safe_text if safe_text else "empty"
+            
+            # Create filename: page_batchid_idx_text.jpg
+            filename = f"{page_prefix}{batch_id}_{idx:03d}_{safe_text}.jpg"
+            output_path = save_dir / filename
+            
+            # Save the crop
+            cv2.imwrite(str(output_path), crop)
+        except Exception as e:
+            # Continue saving other crops even if one fails
+            continue
+
+
+def save_word_polygons_on_page(
+    image: np.ndarray,
+    word_polygons: List[list],
+    word_texts: List[str],
+    save_dir: Path,
+    page_id: str = None
+) -> None:
+    """
+    Draws word polygons on the full page image at their exact locations.
+    
+    Args:
+        image: The full page image (BGR format from OpenCV)
+        word_polygons: List of word polygons in page-level coordinates
+        word_texts: List of recognized text for each word
+        save_dir: Directory to save the debug image
+        page_id: Optional page identifier for filename
+    """
+    if not word_polygons:
+        return
+    
+    save_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Create a copy of the image to draw on
+    debug_image = image.copy()
+    
+    # Draw all word polygons on the page
+    debug_image = draw_polygons(debug_image, word_polygons, color=(255, 0, 0), thickness=2)
+    
+    # Save the visualization
+    page_prefix = f"{page_id}_" if page_id else ""
+    unique_id = uuid.uuid4().hex[:8]
+    filename = f"{page_prefix}words_on_page_{unique_id}.jpg"
+    output_path = save_dir / filename
+    
+    cv2.imwrite(str(output_path), debug_image)

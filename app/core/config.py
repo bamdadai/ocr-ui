@@ -35,7 +35,10 @@ class RecognitionConfig(BaseModel):
     min_conf: float
     checkpoint: Path
     debug: bool
-    debug_font_path: Path = PROJECT_ROOT / "assets/fonts/XB_Niloofar.ttf"
+    debug_font_path: Path = PROJECT_ROOT / "assets/fonts/XB Niloofar.ttf"
+    debug_recog_path: Path = PROJECT_ROOT / "debug/recog"
+    debug_word_crops_path: Path = PROJECT_ROOT / "debug/word_crops"
+    debug_word_polygons_path: Path = PROJECT_ROOT / "debug/word_polygons"
 
 class OrientationConfig(BaseModel):
     """Settings for optional orientation (rotation) correction using a classification model."""
@@ -142,6 +145,9 @@ def setup_directories():
     if settings.debug:
         settings.detection.debug_word_path.mkdir(parents=True, exist_ok=True)
         settings.detection.debug_line_path.mkdir(parents=True, exist_ok=True)
+        settings.recognition.debug_recog_path.mkdir(parents=True, exist_ok=True)
+        settings.recognition.debug_word_crops_path.mkdir(parents=True, exist_ok=True)
+        settings.recognition.debug_word_polygons_path.mkdir(parents=True, exist_ok=True)
 
 # Run the function to create directories when the module is imported
 setup_directories()
