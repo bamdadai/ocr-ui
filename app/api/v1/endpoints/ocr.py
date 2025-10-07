@@ -34,10 +34,31 @@ async def create_ocr_task(
     Uploads multiple files for OCR processing and returns per-file queue results.
     The results will be sent to the provided webhook URL asynchronously, or polled directly for UI requests.
     """
-    normalized_webhook = webhook_url.strip() if webhook_url else None
+    # Normalize webhook URL: strip whitespace and convert empty strings to None
+    normalized_webhook = None
+    if webhook_url:
+        stripped = webhook_url.strip()
+        normalized_webhook = stripped if stripped else None
+
+    logger.info(
+        "ocr.request.received",
+        file_count=len(files),
+        webhook_url=normalized_webhook,
+        has_metadata=metadata is not None
+    )
+
+    # Determine if webhook should be used (based on webhook_url presence)
+    use_webhook = bool(normalized_webhook)
+
+    logger.info(
+        "ocr.webhook.mode",
+        use_webhook=use_webhook,
+        webhook_url=normalized_webhook,
+        has_metadata=metadata is not None
+    )
 
     if metadata is None:
-        # UI request - generate metadata automatically
+        # UI request or simple request without metadata - generate metadata automatically
         metadata_list = []
         for file in files:
             metadata_list.append(
@@ -46,7 +67,6 @@ async def create_ocr_task(
                     "format": (Path(file.filename or "").suffix or "").lower(),
                 }
             )
-        use_webhook = False
     else:
         try:
             metadata_list = json.loads(metadata) or []
@@ -58,8 +78,6 @@ async def create_ocr_task(
 
         if not all(isinstance(item, dict) for item in metadata_list):
             raise HTTPException(status_code=400, detail="Each metadata entry must be a JSON object.")
-
-        use_webhook = bool(normalized_webhook)
 
     queue_results: List[TaskQueueItem] = []
     correlation_id = correlation_id_var.get()
@@ -90,6 +108,17 @@ async def create_ocr_task(
 
             task_name = "app.worker.tasks.process_ocr_task"
             workflow_task_id = str(uuid.uuid4())
+
+            logger.info(
+                "ocr.task.dispatching",
+                guid=guid,
+                task_id=workflow_task_id,
+                filename=upload_file.filename,
+                file_format=metadata_format,
+                webhook_url=normalized_webhook if use_webhook else None,
+                use_webhook=use_webhook
+            )
+
             async_result = celery_app.send_task(
                 name=task_name,
                 kwargs={
@@ -100,14 +129,31 @@ async def create_ocr_task(
                     "workflow_id": workflow_task_id,
                 },
             )
+
+            logger.info(
+                "ocr.task.dispatched",
+                guid=guid,
+                task_id=workflow_task_id,
+                celery_task_id=async_result.id,
+                webhook_url=normalized_webhook if use_webhook else None
+            )
+
         except HTTPException:
             raise
         except Exception as exc:
-            logger.error("queue.dispatch_failed", guid=guid, error=str(exc))
+            logger.error("queue.dispatch_failed", guid=guid, error=str(exc), exc_info=True)
             queue_results.append(TaskQueueItem(task_id=None, status="error", guid=guid))
             continue
 
         queue_results.append(TaskQueueItem(task_id=workflow_task_id, status="queued", guid=guid))
+
+    logger.info(
+        "ocr.request.completed",
+        total_files=len(files),
+        queued_count=sum(1 for r in queue_results if r.status == "queued"),
+        error_count=sum(1 for r in queue_results if r.status == "error"),
+        webhook_url=normalized_webhook
+    )
 
     return queue_results
 

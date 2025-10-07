@@ -97,14 +97,98 @@ def recognize_page_task(self, context: dict) -> dict:
 @app.task(name='app.worker.tasks.send_webhook_result', bind=True, autoretry_for=(RequestException,), retry_kwargs={"max_retries": 3, "countdown": 10})
 def send_webhook_result(self, webhook_url: str, payload: dict, **kwargs):
     guid = payload.get('guid')
+    task_id = payload.get('task_id')
+    retry_count = self.request.retries
+
+    logger.info(
+        "webhook.attempt.start",
+        guid=guid,
+        task_id=task_id,
+        webhook_url=webhook_url,
+        retry_count=retry_count,
+        max_retries=3,
+        ssl_verify=not settings.ALLOW_INSECURE_WEBHOOKS
+    )
+
     try:
-        logger.info("webhook.sending", guid=guid, url=webhook_url)
-        response = requests.post(webhook_url, json=payload, verify=not settings.ALLOW_INSECURE_WEBHOOKS, timeout=10)
+        response = requests.post(
+            webhook_url,
+            json=payload,
+            verify=not settings.ALLOW_INSECURE_WEBHOOKS,
+            timeout=10
+        )
         response.raise_for_status()
-        logger.info("webhook.send.success", guid=guid, status_code=response.status_code)
-    except RequestException as exc:
-        logger.error("webhook.send.failed", guid=guid, error=str(exc))
+
+        logger.info(
+            "webhook.send.success",
+            guid=guid,
+            task_id=task_id,
+            webhook_url=webhook_url,
+            status_code=response.status_code,
+            response_time_ms=response.elapsed.total_seconds() * 1000,
+            retry_count=retry_count
+        )
+
+    except requests.exceptions.Timeout as exc:
+        logger.error(
+            "webhook.send.timeout",
+            guid=guid,
+            task_id=task_id,
+            webhook_url=webhook_url,
+            retry_count=retry_count,
+            error=str(exc)
+        )
         raise self.retry(exc=exc)
+
+    except requests.exceptions.ConnectionError as exc:
+        logger.error(
+            "webhook.send.connection_error",
+            guid=guid,
+            task_id=task_id,
+            webhook_url=webhook_url,
+            retry_count=retry_count,
+            error=str(exc)
+        )
+        raise self.retry(exc=exc)
+
+    except requests.exceptions.HTTPError as exc:
+        logger.error(
+            "webhook.send.http_error",
+            guid=guid,
+            task_id=task_id,
+            webhook_url=webhook_url,
+            status_code=exc.response.status_code if exc.response else None,
+            response_body=exc.response.text[:500] if exc.response else None,
+            retry_count=retry_count,
+            error=str(exc)
+        )
+        raise self.retry(exc=exc)
+
+    except RequestException as exc:
+        logger.error(
+            "webhook.send.failed",
+            guid=guid,
+            task_id=task_id,
+            webhook_url=webhook_url,
+            retry_count=retry_count,
+            error=str(exc),
+            error_type=type(exc).__name__
+        )
+        raise self.retry(exc=exc)
+
+    except Exception as exc:
+        # Non-retryable exception
+        logger.critical(
+            "webhook.send.critical_error",
+            guid=guid,
+            task_id=task_id,
+            webhook_url=webhook_url,
+            retry_count=retry_count,
+            error=str(exc),
+            error_type=type(exc).__name__,
+            exc_info=True
+        )
+        raise
 
 
 # --- Postprocessing Functions ---
@@ -254,9 +338,24 @@ def finalize_and_notify_task(page_results: list, request_id: str, guid: str, web
         "error": ""
     }
 
-    logger.info("finalize.success", guid=guid, total_pages=len(all_pages))
+    logger.info("finalize.success", guid=guid, total_pages=len(all_pages), confidence=avg_confidence)
 
     if webhook_url:
+        logger.info(
+            "webhook.dispatch",
+            guid=guid,
+            task_id=request_id,
+            webhook_url=webhook_url,
+            payload_size=len(final_payload.get('text', '')),
+            status=final_payload.get('status')
+        )
         send_webhook_result.delay(webhook_url, final_payload, correlation_id=correlation_id_var.get())
+    else:
+        logger.info(
+            "webhook.skipped",
+            guid=guid,
+            task_id=request_id,
+            reason="no_webhook_url_provided"
+        )
 
     return final_payload
