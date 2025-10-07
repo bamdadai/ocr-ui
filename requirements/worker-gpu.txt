@@ -8,7 +8,7 @@
 # --- ML/DL & Image Processing (GPU-enabled versions) ---
 # Pinning versions is crucial for stability in ML libraries. 
 pytorch-lightning==2.5.2 
-ultralytics==8.3.67
+ultralytics==8.3.73
 opencv-python==4.9.0.80
 transformers==4.50.1
 numpy==1.26.4

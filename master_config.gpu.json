@@ -1,5 +1,12 @@
 {
   "debug": true,
+  "logging": {
+    "level": "DEBUG",
+    "log_requests": true,
+    "log_performance": true,
+    "log_memory_usage": true,
+    "log_model_loading": true
+  },
   "detection": {
     "device": "cuda:0",
     "word_detect": {

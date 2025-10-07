@@ -86,14 +86,44 @@ def configure_logging():
     root_logger = logging.getLogger()
     root_logger.addHandler(console_handler) # Log to console
     root_logger.addHandler(app_log_handler)   # Log to app.log
-    root_logger.setLevel(logging.INFO)
+    root_logger.setLevel(logging.DEBUG)  # Changed to DEBUG for more detailed logging
 
     # --- Celery Logger ---
     celery_logger = logging.getLogger("celery")
     celery_logger.addHandler(console_handler)     # Log to console
     celery_logger.addHandler(celery_log_handler) # Log to celery.log
-    celery_logger.setLevel(logging.INFO)
+    celery_logger.setLevel(logging.DEBUG)  # Changed to DEBUG for more detailed logging
     celery_logger.propagate = False  # IMPORTANT: Prevents Celery logs from being duplicated in the root logger (app.log)
+
+    # --- Application-specific loggers with detailed logging ---
+    app_loggers = [
+        "app.services",
+        "app.worker", 
+        "app.main",
+        "app.core"
+    ]
+    
+    for logger_name in app_loggers:
+        app_logger = logging.getLogger(logger_name)
+        app_logger.addHandler(console_handler)
+        app_logger.addHandler(app_log_handler)
+        app_logger.setLevel(logging.DEBUG)
+        app_logger.propagate = False
+
+    # --- Third-party library loggers (reduce noise but keep important info) ---
+    third_party_loggers = {
+        "uvicorn": logging.INFO,
+        "uvicorn.access": logging.WARNING,  # Reduce access log noise
+        "uvicorn.error": logging.INFO,
+        "gunicorn": logging.INFO,
+        "torch": logging.WARNING,  # Reduce PyTorch noise
+        "transformers": logging.WARNING,  # Reduce transformers noise
+        "ultralytics": logging.WARNING,  # Reduce ultralytics noise
+        "paddleocr": logging.WARNING,  # Reduce PaddleOCR noise
+    }
+    
+    for logger_name, level in third_party_loggers.items():
+        logging.getLogger(logger_name).setLevel(level)
 
     # --- Silence Uvicorn's default loggers to prevent duplicate outputs ---
     for name in ["uvicorn.access", "uvicorn.error"]:

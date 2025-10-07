@@ -139,8 +139,32 @@ class DetectionService:
 
     @time_method
     def _load_yolo_model(self, model_path: str) -> YOLO:
-        model = YOLO(model_path)
-        return model.to(self.device)
+        """Load YOLO model with compatibility checks and error handling."""
+        try:
+            logger.info("detection_service.yolo_model_loading", model_path=model_path, device=self.device)
+            
+            # Load model with compatibility mode
+            model = YOLO(model_path)
+            
+            # Check model compatibility
+            if hasattr(model.model, 'model'):
+                logger.info("detection_service.yolo_model_loaded", 
+                           model_path=model_path, 
+                           device=self.device,
+                           model_type=type(model.model).__name__)
+            else:
+                logger.warning("detection_service.yolo_model_structure_unexpected", 
+                              model_path=model_path)
+            
+            return model.to(self.device)
+            
+        except Exception as e:
+            logger.error("detection_service.yolo_model_load_failed", 
+                        model_path=model_path, 
+                        device=self.device,
+                        error=str(e), 
+                        exc_info=True)
+            raise RuntimeError(f"Failed to load YOLO model from {model_path}: {str(e)}")
 
     @time_method
     def _load_paddle_model(self, paddle_config: Dict[str, Any]) -> TextDetection:
@@ -294,12 +318,46 @@ class DetectionService:
     ) -> List:
         start = time.time()
 
-        results: List[Results] = model(image, **model_params)
-        result = results[0]
+        try:
+            # Add compatibility check for model structure
+            if not hasattr(model, 'model'):
+                raise AttributeError("YOLO model structure is incompatible - missing 'model' attribute")
+            
+            # Check if model has the expected Conv layer structure
+            if hasattr(model.model, 'model'):
+                model_layers = model.model.model
+                if hasattr(model_layers, '__iter__'):
+                    for layer in model_layers:
+                        if hasattr(layer, 'bn') and not hasattr(layer, 'bn'):
+                            logger.warning("detection_service.model_layer_compatibility_issue", 
+                                         layer_type=type(layer).__name__,
+                                         model_type=model_type)
+                            break
 
-        # Optional class filter
-        filtered = self._filter_by_classes(result, model_type)
-        post_processed = post_process_func(filtered)
+            results: List[Results] = model(image, **model_params)
+            result = results[0]
+
+            # Optional class filter
+            filtered = self._filter_by_classes(result, model_type)
+            post_processed = post_process_func(filtered)
+            
+        except AttributeError as e:
+            if "'Conv' object has no attribute 'bn'" in str(e):
+                logger.error("detection_service.model_compatibility_error", 
+                           error=str(e),
+                           model_type=model_type,
+                           suggestion="Model was trained with different Ultralytics version")
+                raise RuntimeError(f"Model compatibility error: {str(e)}. "
+                                 f"Please retrain the model with current Ultralytics version or use compatible model weights.")
+            else:
+                raise
+        except Exception as e:
+            logger.error("detection_service.prediction_failed", 
+                        error=str(e), 
+                        model_type=model_type,
+                        exc_info=True)
+            raise
+            
         duration = time.time() - start
         if self.debug:
             try:
