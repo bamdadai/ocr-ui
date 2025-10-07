@@ -49,7 +49,7 @@
   },
   "orientation": {
     "enabled": true,
-    "path": "weights/orientation_cls.pt",
+    "path": "weights/rotation_classifier.pt",
     "device": "cuda:0",
     "imgsz": 224
   },
