@@ -33,10 +33,20 @@ def rebase_polygon(polygon: List[int], offset: Tuple[int, int]) -> List[int]:
     x_offset, y_offset = offset
     return [c + (x_offset if i % 2 == 0 else y_offset) for i, c in enumerate(polygon)]
 
-def get_polygons_from_masks(masks: List[np.ndarray]) -> List[List[int]]:
-    """Converts a list of binary masks into a list of polygon coordinates."""
+def get_polygons_from_masks(masks) -> List[List[int]]:
+    """Converts masks (ultralytics Masks object or list of arrays) into polygon coordinates."""
     polygons = []
-    for mask in masks:
+
+    # Handle ultralytics Masks object
+    if hasattr(masks, 'data'):
+        # Convert to numpy and get individual masks
+        mask_data = masks.data.cpu().numpy() if hasattr(masks.data, 'cpu') else masks.data
+        mask_list = [mask_data[i] for i in range(len(mask_data))]
+    else:
+        # Already a list of arrays
+        mask_list = masks
+
+    for mask in mask_list:
         if mask.dtype != np.uint8:
             mask = mask.astype(np.uint8)
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
