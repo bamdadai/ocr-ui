@@ -387,16 +387,30 @@ class DetectionService:
         # Preferred path: segmentation masks -> polygons -> merge
         try:
             if word_result.masks is not None:
+                logger.info("detection_service.processing_masks", 
+                           masks_type=type(word_result.masks).__name__,
+                           has_data=hasattr(word_result.masks, 'data'))
+                
                 polygons = get_polygons_from_masks(word_result.masks)
                 logger.info("detection_service.word_polygons_before_merge", 
                            count=len(polygons), 
                            dice_threshold=self.merging_iou)
-                merged_polygons = merge_overlapping_masks(polygons, dice_threshold=self.merging_iou)
-                logger.info("detection_service.word_polygons_after_merge", 
-                           count=len(merged_polygons))
-                return [poly.reshape(-1).astype(int).tolist() for poly in merged_polygons]
+                
+                if polygons:
+                    # Convert polygons back to numpy arrays for merging
+                    polygon_arrays = [np.array(poly).reshape(-1, 2) for poly in polygons]
+                    merged_polygons = merge_overlapping_masks(polygon_arrays, dice_threshold=self.merging_iou)
+                    logger.info("detection_service.word_polygons_after_merge", 
+                               count=len(merged_polygons))
+                    return [poly.reshape(-1).astype(int).tolist() for poly in merged_polygons]
+                else:
+                    logger.warning("detection_service.no_polygons_extracted_from_masks")
+                    
         except Exception as e:
-            logger.warning("detection_service.word_masks_postprocess_failed", error=str(e))
+            logger.warning("detection_service.word_masks_postprocess_failed", 
+                          error=str(e), 
+                          masks_type=type(word_result.masks).__name__ if word_result.masks else None,
+                          exc_info=True)
             # continue to bbox fallback
         # Fallback: use bounding boxes if masks are missing
         try:

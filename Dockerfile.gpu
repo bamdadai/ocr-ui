@@ -25,6 +25,8 @@ RUN rm -f /etc/apt/sources.list.d/cuda* /etc/apt/sources.list.d/nvidia* || true 
     libxext6 \
     libxrender1 \
     libgomp1 \
+    ccache \
+    build-essential \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # 2) Create Python venv inside final image and install dependencies
