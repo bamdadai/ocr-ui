@@ -38,7 +38,7 @@ services:
   api:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.gpu
       pull: false
       args:
         REQ_FILE: requirements/api.txt
@@ -67,10 +67,10 @@ services:
   worker_pipeline:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.gpu
       pull: false
       args:
-        REQ_FILE: requirements/worker.txt
+        REQ_FILE: requirements/worker-gpu.txt
     pull_policy: never
     container_name: ocr_worker_pipeline
     restart: unless-stopped
@@ -100,10 +100,10 @@ services:
   worker_dispatch:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.gpu
       pull: false
       args:
-        REQ_FILE: requirements/worker.txt
+        REQ_FILE: requirements/worker-gpu.txt
     pull_policy: never
     container_name: ocr_worker_dispatch
     restart: unless-stopped
@@ -125,10 +125,10 @@ services:
   worker_webhooks:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.gpu
       pull: false
       args:
-        REQ_FILE: requirements/worker.txt
+        REQ_FILE: requirements/worker-gpu.txt
     pull_policy: never
     container_name: ocr_worker_webhooks
     restart: unless-stopped

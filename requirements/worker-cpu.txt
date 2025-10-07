@@ -1,11 +1,11 @@
 # ==================================
-# Worker Service Dependencies
+# CPU-Only Worker Service Dependencies
 # ==================================
 
 # Include all shared packages from base.txt
 -r base.txt
 
-# --- ML/DL & Image Processing ---
+# --- ML/DL & Image Processing (CPU-only versions) ---
 # Pinning versions is crucial for stability in ML libraries. 
 pytorch-lightning==2.5.2 
 ultralytics==8.3.67

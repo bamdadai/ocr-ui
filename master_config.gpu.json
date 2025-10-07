@@ -1,0 +1,50 @@
+{
+  "debug": true,
+  "detection": {
+    "device": "cuda:0",
+    "word_detect": {
+      "path": "weights/word_detection.pt",
+      "conf": 0.2,
+      "iou": 0.3,
+      "nms": true,
+      "merging_iou": 0.2,
+      "remove_nested": true
+    },
+    "paddle_ocr": {
+      "model_name": "PP-OCRv5_server_det",
+      "reading_direction": "rtl",
+      "pad": 2,
+      "sort_reading_order": true,
+      "model_kwargs": {
+        "model_dir": "/app/weights/PP-OCRv5_server_det_infer"
+      }
+    },
+    "parallel_processing": {
+      "enabled": true,
+      "max_workers": 4,
+      "max_batch_size": 8,
+      "memory_limit_mb": 8192
+    },
+    "debug": true,
+    "debug_word_path": "debug/word_detections",
+    "debug_line_path": "debug/line_detections"
+  },
+  "recognition": {
+    "device": "cuda:0",
+    "checkpoint": "weights/recognition_model.ckpt",
+    "batch_size": 64,
+    "min_conf": 0.7,
+    "debug": true
+  },
+  "pipeline": {
+    "debug": true,
+    "enable_recognition": true
+  },
+  "orientation": {
+    "enabled": true,
+    "path": "weights/orientation_cls.pt",
+    "device": "cuda:0",
+    "imgsz": 224
+  },
+  "valid_ocr_formats": [".jpeg", ".jpg", ".png", ".pdf"]
+}

@@ -1,0 +1,152 @@
+services:
+  # -------------------------
+  # Infrastructure Services
+  # -------------------------
+  redis:
+    image: redis:7.2-alpine
+    container_name: ocr_redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    networks:
+      - ocr_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: ocr_rabbitmq
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:15672:15672"  # Bind to localhost only
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+      - ./rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+    networks:
+      - ocr_network
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # -------------------------
+  # Application Services
+  # -------------------------
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.cpu
+      pull: false
+      args:
+        REQ_FILE: requirements/api.txt
+    pull_policy: never
+    container_name: ocr_api
+    restart: unless-stopped
+    working_dir: /app
+    command: gunicorn -w 4 -k uvicorn.workers.UvicornWorker app.main:app --bind 0.0.0.0:8084
+    ports:
+      - "8000:8084"
+    env_file: .env
+    environment:
+      - PYTHONPATH=/app
+    volumes:
+      - ./logs:/app/logs
+    depends_on:
+      redis: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    networks:
+      - ocr_network
+
+  # ===================================
+  # Specialized Celery Workers
+  # ===================================
+
+  worker_pipeline:
+    build:
+      context: .
+      dockerfile: Dockerfile.cpu
+      pull: false
+      args:
+        REQ_FILE: requirements/worker-cpu.txt
+    pull_policy: never
+    container_name: ocr_worker_pipeline
+    restart: unless-stopped
+    working_dir: /app
+    command: python -m celery -A app.worker.celery_app worker -l info -Q ocr_pipeline -c 2
+    env_file: .env
+    environment:
+      - PYTHONPATH=/app
+    volumes:
+      - ./weights:/app/weights:ro
+      - ./debug:/app/debug
+      - ./logs:/app/logs
+    deploy:
+      resources:
+        limits: { cpus: '2.0', memory: 4G }
+    depends_on:
+      redis: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    networks:
+      - ocr_network
+
+  worker_dispatch:
+    build:
+      context: .
+      dockerfile: Dockerfile.cpu
+      pull: false
+      args:
+        REQ_FILE: requirements/worker-cpu.txt
+    pull_policy: never
+    container_name: ocr_worker_dispatch
+    restart: unless-stopped
+    working_dir: /app
+    command: python -m celery -A app.worker.celery_app worker -l info -Q dispatch -c 4
+    env_file: .env
+    environment:
+      - PYTHONPATH=/app
+    volumes:
+      - ./debug:/app/debug
+      - ./logs:/app/logs
+    deploy:
+      resources:
+        limits: { cpus: '1.0', memory: 4G }
+    depends_on: [redis, rabbitmq]
+    networks:
+      - ocr_network
+
+  worker_webhooks:
+    build:
+      context: .
+      dockerfile: Dockerfile.cpu
+      pull: false
+      args:
+        REQ_FILE: requirements/worker-cpu.txt
+    pull_policy: never
+    container_name: ocr_worker_webhooks
+    restart: unless-stopped
+    working_dir: /app
+    command: python -m celery -A app.worker.celery_app worker -l info -Q webhooks -c 4
+    env_file: .env
+    environment:
+      - PYTHONPATH=/app
+    volumes:
+      - ./logs:/app/logs
+    deploy:
+      resources:
+        limits: { cpus: '1.0', memory: 2G }
+    depends_on: [redis, rabbitmq]
+    networks:
+      - ocr_network
+
+
+networks:
+  ocr_network:
+    driver: bridge
+    name: ocr_production_network
+
+volumes:
+  redis_data:
+  rabbitmq_data:
