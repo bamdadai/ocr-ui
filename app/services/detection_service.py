@@ -170,7 +170,8 @@ class DetectionService:
     def _load_paddle_model(self, paddle_config: Dict[str, Any]) -> TextDetection:
         """Load PaddleOCR TextDetection model with configuration."""
         model_name = paddle_config.get('model_name', 'PP-OCRv5_server_det')
-        model_kwargs = paddle_config.get('model_kwargs', {})
+        model_kwargs = paddle_config.get('model_kwargs', {
+        "model_dir": "/app/weights/PP-OCRv5_server_det_infer"})
         logger.info("detection_service.loading_paddle_model", model_kwargs=model_kwargs)
         return TextDetection(**model_kwargs)
 
