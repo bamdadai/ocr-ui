@@ -19,7 +19,7 @@ services:
     container_name: ocr_rabbitmq
     restart: unless-stopped
     ports:
-      - "127.0.0.1:15672:15672"  # Bind to localhost only
+      - "127.0.0.1:15674:15672"  # Bind to localhost only
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
       - ./rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
@@ -53,6 +53,7 @@ services:
     environment:
       - PYTHONPATH=/app
     volumes:
+      - ./weights:/app/weights:ro
       - ./logs:/app/logs
     depends_on:
       redis: { condition: service_healthy }
@@ -108,6 +109,7 @@ services:
     environment:
       - PYTHONPATH=/app
     volumes:
+      - ./weights:/app/weights:ro
       - ./debug:/app/debug
       - ./logs:/app/logs
     deploy:
@@ -133,6 +135,7 @@ services:
     environment:
       - PYTHONPATH=/app
     volumes:
+      - ./weights:/app/weights:ro
       - ./logs:/app/logs
     deploy:
       resources:
