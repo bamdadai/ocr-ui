@@ -46,7 +46,7 @@ services:
     container_name: ocr_api
     restart: unless-stopped
     working_dir: /app
-    command: gunicorn -w 4 -k uvicorn.workers.UvicornWorker app.main:app --bind 0.0.0.0:8084
+    command: gunicorn -w 2 -k uvicorn.workers.UvicornWorker app.main:app --bind 0.0.0.0:8084
     ports:
       - "8000:8084"
     env_file: .env
