@@ -114,10 +114,20 @@ def postprocess_ocr_text(text: str, custom_replacements: dict = None, replacemen
         return text
 
     # Import here to avoid circular imports
-    from app.utils.text_processing import join_spaced_numbers, fix_dash_positioning, fix_period_positioning, fix_dash_comma_spacing, apply_custom_replacements
+    from app.utils.text_processing import (
+        join_spaced_numbers,
+        fix_dash_positioning,
+        fix_period_positioning,
+        fix_dash_comma_spacing,
+        convert_mixed_digit_sequences,
+        apply_custom_replacements,
+    )
 
     # Join spaced numbers first
     text = join_spaced_numbers(text)
+
+    # Ensure digits adjacent to Persian digits use the Persian glyphs
+    text = convert_mixed_digit_sequences(text)
     
     # Fix dash positioning (move dashes from before numbers to after)
     text = fix_dash_positioning(text)

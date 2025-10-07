@@ -12,11 +12,6 @@ class TaskQueueItem(BaseModel):
     guid: str = Field(..., description="Client-provided or auto-generated GUID for the file.")
 
 
-class TaskQueueResponse(BaseModel):
-    """Envelope containing queue results for each uploaded file."""
-    tasks: List[TaskQueueItem] = Field(..., description="Per-file queue results, preserving the order of the uploaded files.")
-
-
 # --- Task Status Schemas ---
 
 class FinalOCRResult(BaseModel):

@@ -13,7 +13,6 @@ from app.core.logging import correlation_id_var
 from app.worker.celery_app import app as celery_app
 from app.schemas.ocr import (
     TaskQueueItem,
-    TaskQueueResponse,
     TaskStatusResponse,
     FinalOCRResult,
     TaskErrorResult,
@@ -25,7 +24,7 @@ router = APIRouter(tags=["OCR Processing"])
 ALLOWED_FILE_EXTENSIONS = {".jpeg", ".png", ".pdf", ".jpg", ".tif", ".tiff"}
 logger = structlog.get_logger(__name__)
 
-@router.post("/ocr", response_model=TaskQueueResponse)
+@router.post("/ocr", response_model=List[TaskQueueItem])
 async def create_ocr_task(
     files: List[UploadFile] = File(..., description="List of files to be processed."),
     metadata: str = Form(None, description="JSON-encoded string containing file metadata (must match the number of uploaded files). For UI requests, this can be omitted."),
@@ -35,6 +34,8 @@ async def create_ocr_task(
     Uploads multiple files for OCR processing and returns per-file queue results.
     The results will be sent to the provided webhook URL asynchronously, or polled directly for UI requests.
     """
+    normalized_webhook = webhook_url.strip() if webhook_url else None
+
     if metadata is None:
         # UI request - generate metadata automatically
         metadata_list = []
@@ -58,7 +59,7 @@ async def create_ocr_task(
         if not all(isinstance(item, dict) for item in metadata_list):
             raise HTTPException(status_code=400, detail="Each metadata entry must be a JSON object.")
 
-        use_webhook = webhook_url is not None
+        use_webhook = bool(normalized_webhook)
 
     queue_results: List[TaskQueueItem] = []
     correlation_id = correlation_id_var.get()
@@ -94,13 +95,11 @@ async def create_ocr_task(
                 kwargs={
                     "file_content": file_bytes,
                     "metadata": full_metadata,
-                    "webhook_url": webhook_url if use_webhook else None,
+                    "webhook_url": normalized_webhook if use_webhook else None,
                     "correlation_id": correlation_id,
                     "workflow_id": workflow_task_id,
                 },
             )
-
-            main_workflow_id = async_result.get(timeout=10)
         except HTTPException:
             raise
         except Exception as exc:
@@ -108,22 +107,9 @@ async def create_ocr_task(
             queue_results.append(TaskQueueItem(task_id=None, status="error", guid=guid))
             continue
 
-        if not main_workflow_id:
-            logger.error("queue.missing_workflow_id", guid=guid)
-            queue_results.append(TaskQueueItem(task_id=None, status="error", guid=guid))
-            continue
+        queue_results.append(TaskQueueItem(task_id=workflow_task_id, status="queued", guid=guid))
 
-        if main_workflow_id != workflow_task_id:
-            logger.warning(
-                "queue.workflow_id_mismatch",
-                guid=guid,
-                expected=workflow_task_id,
-                received=main_workflow_id,
-            )
-
-        queue_results.append(TaskQueueItem(task_id=main_workflow_id, status="queued", guid=guid))
-
-    return TaskQueueResponse(tasks=queue_results)
+    return queue_results
 
 
 @router.get("/ocr/tasks/{task_id}", response_model=TaskStatusResponse)

@@ -6,6 +6,10 @@ from pathlib import Path
 import arabic_reshaper
 from bidi.algorithm import get_display
 
+PERSIAN_DIGITS = "۰۱۲۳۴۵۶۷۸۹"
+ENGLISH_DIGITS = "0123456789"
+_EN_TO_FA_TRANSLATION = str.maketrans(ENGLISH_DIGITS, PERSIAN_DIGITS)
+
 def make_farsi_text_for_display(text: str) -> str:
     """Prepares Farsi text for display in libraries like Matplotlib."""
     reshaped_text = arabic_reshaper.reshape(text)
@@ -86,6 +90,20 @@ def fix_dash_comma_spacing(text: str) -> str:
     text = re.sub(r'،+', '،', text)
     
     return text
+
+def convert_mixed_digit_sequences(text: str) -> str:
+    """Converts English digits to Persian when they appear alongside Persian digits."""
+    digit_pattern = re.compile(r'[0-9\u06F0-\u06F9]+')
+
+    def replace_mixed_digits(match: re.Match) -> str:
+        sequence = match.group(0)
+        has_persian = any('\u06F0' <= ch <= '\u06F9' for ch in sequence)
+        has_english = any('0' <= ch <= '9' for ch in sequence)
+        if has_persian and has_english:
+            return sequence.translate(_EN_TO_FA_TRANSLATION)
+        return sequence
+
+    return digit_pattern.sub(replace_mixed_digits, text)
 
 def load_replacements_from_json(json_file_path: str) -> dict:
     """Loads replacement patterns from a JSON file.

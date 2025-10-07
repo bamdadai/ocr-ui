@@ -52,8 +52,14 @@ async def send_request(session, file_path, request_num):
         async with session.post(API_URL, data=form_data) as response:
             response_json = await response.json()
             if response.status == 200:
-                print(f"✅ درخواست {request_num} ({file_name}): تسک با موفقیت در صف قرار گرفت.")
-                results.append({"status": "queued", "file": file_name})
+                tasks = response_json if isinstance(response_json, list) else response_json.get("tasks", [])
+                queued = any(task.get("status") == "queued" for task in tasks) if isinstance(tasks, list) else False
+                if queued:
+                    print(f"✅ درخواست {request_num} ({file_name}): تسک با موفقیت در صف قرار گرفت.")
+                    results.append({"status": "queued", "file": file_name})
+                else:
+                    print(f"⚠️ درخواست {request_num} ({file_name}): پاسخ بدون تسک معتبر دریافت شد.")
+                    results.append({"status": "unexpected", "file": file_name})
             else:
                 print(f"❌ درخواست {request_num} ({file_name}): خطا در ارسال. Status: {response.status}")
                 results.append({"status": "failed", "file": file_name})

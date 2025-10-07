@@ -116,7 +116,17 @@ document.addEventListener('DOMContentLoaded', () => {
         currentUploadedFile = files[0];
         
         const formData = new FormData();
-        formData.append('files', files[0]); // API expects 'files' parameter for multiple files
+        const targetFile = files[0];
+        formData.append('files', targetFile); // API expects 'files' parameter for multiple files
+
+        const extensionMatch = targetFile.name ? targetFile.name.match(/\.[^.]+$/) : null;
+        const inferredFormat = extensionMatch ? extensionMatch[0].toLowerCase() : '';
+        const metadataPayload = [{
+            guid: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `ui-${Date.now()}`,
+            format: inferredFormat
+        }];
+        formData.append('metadata', JSON.stringify(metadataPayload));
+        formData.append('webhook_url', '');
         
         try {
             const response = await fetch('/v3/ocr', { method: 'POST', body: formData });
@@ -125,7 +135,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 const errorDetail = data.detail || 'خطای ناشناخته از سمت سرور';
                 throw new Error(typeof errorDetail === 'object' ? JSON.stringify(errorDetail) : errorDetail);
             }
-            const firstTask = Array.isArray(data.tasks) && data.tasks.length > 0 ? data.tasks[0] : null;
+            const tasks = Array.isArray(data) ? data : data.tasks;
+            const firstTask = Array.isArray(tasks) && tasks.length > 0 ? tasks[0] : null;
             if (!firstTask) {
                 throw new Error("سرور پاسخ نامعتبری بازگرداند.");
             }
