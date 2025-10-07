@@ -22,6 +22,7 @@ class DetectionConfig(BaseModel):
     """Settings related to the Detection service."""
     device: str
     word_detect: Dict[str, Any]
+    paddle_ocr: Dict[str, Any] = {}
     parallel_processing: DetectionParallelConfig
     debug: bool
     debug_word_path: Path = PROJECT_ROOT / "debug/word_detections"
