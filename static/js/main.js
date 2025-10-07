@@ -125,12 +125,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 const errorDetail = data.detail || 'خطای ناشناخته از سمت سرور';
                 throw new Error(typeof errorDetail === 'object' ? JSON.stringify(errorDetail) : errorDetail);
             }
-            const mainTaskID = data.task_ids && data.task_ids.length > 0 ? data.task_ids[0] : null;
-            if (mainTaskID) {
-                pollForTaskResult(mainTaskID);
-            } else {
-                throw new Error("سرور شناسه تسک معتبری برنگرداند.");
+            const firstTask = Array.isArray(data.tasks) && data.tasks.length > 0 ? data.tasks[0] : null;
+            if (!firstTask) {
+                throw new Error("سرور پاسخ نامعتبری بازگرداند.");
             }
+
+            if (firstTask.status !== 'queued' || !firstTask.task_id) {
+                const message = firstTask.status === 'error'
+                    ? 'فرمت فایل پشتیبانی نمی‌شود یا درخواست رد شد.'
+                    : 'سرور شناسه تسک معتبری برنگرداند.';
+                throw new Error(message);
+            }
+
+            pollForTaskResult(firstTask.task_id);
         } catch (error) {
             displayError(`خطا در ارسال: ${error.message}`);
             loadingOverlay.classList.add('d-none');

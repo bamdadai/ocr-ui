@@ -7,6 +7,7 @@ import numpy as np
 import requests
 import structlog
 import re
+from pathlib import Path
 from celery import chain, group, chord
 from requests.exceptions import RequestException
 from typing import TYPE_CHECKING
@@ -29,6 +30,7 @@ logger = structlog.get_logger(__name__)
 # --- Lazy Loading and Micro-tasks (These remain unchanged) ---
 
 pipeline_singleton: 'PipelineService | None' = None
+ALLOWED_FILE_EXTENSIONS = {".jpeg", ".png", ".pdf", ".jpg", ".tif", ".tiff"}
 
 def get_pipeline_service() -> 'PipelineService':
     global pipeline_singleton
@@ -138,19 +140,38 @@ def postprocess_ocr_text(text: str, custom_replacements: dict = None, replacemen
 # --- Orchestrator and Finalizer Tasks (MODIFIED) ---
 
 @app.task(name='app.worker.tasks.process_ocr_task', acks_late=True, bind=True)
-def process_ocr_task(self, file_content: bytes, metadata: dict, webhook_url: str | None = None, correlation_id: str | None = None):
+def process_ocr_task(
+    self,
+    file_content: bytes,
+    metadata: dict,
+    webhook_url: str | None = None,
+    correlation_id: str | None = None,
+    workflow_id: str | None = None,
+):
     """
     The main entry point task. It dispatches the parallel OCR workflow
     and returns the ID of the main chord workflow for polling.
     """
-    request_id = correlation_id or str(uuid.uuid4())
+    request_id = workflow_id or str(uuid.uuid4())
+    correlation_context = correlation_id or request_id
     guid = metadata.get('guid', request_id)
-    correlation_id_var.set(request_id)
-    logger.info("ocr_task.received", guid=guid)
+
+    # Normalise and validate the declared file format against the allow-list.
+    declared_format = (metadata.get('format') or metadata.get('file_extension') or "").lower()
+    if declared_format and not declared_format.startswith("."):
+        declared_format = f".{declared_format}"
+
+    if not declared_format:
+        filename = metadata.get("filename") or ""
+        declared_format = Path(filename).suffix.lower()
+
+    if declared_format not in ALLOWED_FILE_EXTENSIONS:
+        raise ValueError(f"Unsupported file format: {declared_format or 'unknown'}")
+
+    correlation_id_var.set(correlation_context)
+    logger.info("ocr_task.received", guid=guid, task_id=request_id, file_format=declared_format)
     try:
-        # THE MORE LOGICAL WAY: Check the file's magic numbers to determine its type.
-        # PDF files start with the bytes '%PDF'.
-        is_pdf = file_content.startswith(b'%PDF')
+        is_pdf = declared_format == ".pdf"
         
         if is_pdf:
             images = pdf_to_images(file_content)
@@ -176,7 +197,7 @@ def process_ocr_task(self, file_content: bytes, metadata: dict, webhook_url: str
             header=group(page_workflows),
             body=finalize_and_notify_task.s(request_id=request_id, guid=guid, webhook_url=webhook_url)
         )
-        async_result = workflow.apply_async(correlation_id=request_id)
+        async_result = workflow.apply_async(task_id=request_id, correlation_id=correlation_context)
         logger.info("ocr_task.workflow_dispatched", guid=guid, chord_task_id=async_result.id)
         return async_result.id
     except Exception as e:

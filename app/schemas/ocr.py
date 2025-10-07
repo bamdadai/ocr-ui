@@ -1,14 +1,20 @@
 # app/schemas/ocr.py
 
 from pydantic import BaseModel, Field
-from typing import Optional, List, Any, Union
+from typing import Optional, List, Any, Union, Literal
 
 # --- Output Schemas ---
 
+class TaskQueueItem(BaseModel):
+    """Per-file submission status returned after queuing."""
+    task_id: Optional[str] = Field(None, description="Identifier for the OCR task. Present when the file was queued.")
+    status: Literal["queued", "error"] = Field(..., description="Submission status for this file.")
+    guid: str = Field(..., description="Client-provided or auto-generated GUID for the file.")
+
+
 class TaskQueueResponse(BaseModel):
-    """The response returned after successfully queuing tasks."""
-    task_ids: List[str] = Field(..., description="List of task IDs for the queued OCR tasks.")
-    status: str = Field(..., description="The initial status of the tasks, always 'queued'.")
+    """Envelope containing queue results for each uploaded file."""
+    tasks: List[TaskQueueItem] = Field(..., description="Per-file queue results, preserving the order of the uploaded files.")
 
 
 # --- Task Status Schemas ---
