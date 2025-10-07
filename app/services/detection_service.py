@@ -412,7 +412,15 @@ class DetectionService:
                     merged_polygons = merge_overlapping_masks(polygon_arrays, dice_threshold=self.merging_iou)
                     logger.info("detection_service.word_polygons_after_merge", 
                                count=len(merged_polygons))
-                    return [poly.reshape(-1).astype(int).tolist() for poly in merged_polygons]
+                    flattened = []
+                    for poly in merged_polygons:
+                        poly_arr = np.asarray(poly)
+                        if poly_arr.ndim == 2 and poly_arr.shape[1] == 2:
+                            flattened.append(poly_arr.reshape(-1).astype(int).tolist())
+                        else:
+                            logger.warning("detection_service.merge_output_unexpected_shape",
+                                           shape=getattr(poly_arr, "shape", None))
+                    return flattened
                 else:
                     logger.warning("detection_service.no_polygons_extracted_from_masks")
                     
@@ -663,4 +671,3 @@ class DetectionService:
     def _centroid(self, poly: np.ndarray) -> Tuple[float, float]:
         c = poly.mean(axis=0)
         return float(c[0]), float(c[1])
-

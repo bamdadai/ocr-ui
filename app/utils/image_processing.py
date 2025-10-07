@@ -55,47 +55,86 @@ def get_polygons_from_masks(masks) -> List[List[int]]:
                 polygons.append(cnt.flatten().tolist())
     return polygons
 
-
 def merge_overlapping_masks(masks: List[np.ndarray], dice_threshold: float = 0.5) -> List[np.ndarray]:
-    """Merges masks that have a high degree of overlap using the Dice score and a Union-Find algorithm."""
+    """Merges overlapping masks or polygons using Dice similarity and Union-Find.
+
+    The function accepts either binary masks (all with the same shape) or polygon
+    point arrays shaped (N, 2). When polygons are provided they are rasterised
+    onto a shared canvas so the Dice computation and merging logic can operate
+    consistently. The merged outputs are returned in the same representation
+    (masks in, masks out; polygons in, polygons out).
+    """
     n = len(masks)
     if n < 2:
         return masks
-        
+
+    first = np.asarray(masks[0])
+    polygons_mode = first.ndim == 2 and first.shape[-1] == 2
+
+    if polygons_mode:
+        polygons = [np.asarray(poly, dtype=np.float32) for poly in masks]
+        stacked = np.vstack(polygons)
+        min_xy = np.floor(stacked.min(axis=0)).astype(np.int32)
+        max_xy = np.ceil(stacked.max(axis=0)).astype(np.int32)
+        width = max(1, int(max_xy[0] - min_xy[0]) + 3)
+        height = max(1, int(max_xy[1] - min_xy[1]) + 3)
+
+        rasterised_masks = []
+        for poly in polygons:
+            shifted = np.round(poly - min_xy).astype(np.int32)
+            mask = np.zeros((height, width), dtype=np.uint8)
+            if shifted.size >= 6:
+                cv2.fillPoly(mask, [shifted], 1)
+            rasterised_masks.append(mask.astype(bool))
+        working_masks = rasterised_masks
+    else:
+        working_masks = [np.asarray(mask, dtype=bool) for mask in masks]
+
     parent = list(range(n))
-    def find(i):
-        if parent[i] == i: return i
-        parent[i] = find(parent[i])
+
+    def find(i: int) -> int:
+        if parent[i] != i:
+            parent[i] = find(parent[i])
         return parent[i]
 
-    def union(i, j):
+    def union(i: int, j: int) -> None:
         root_i, root_j = find(i), find(j)
-        if root_i != root_j: parent[root_j] = root_i
+        if root_i != root_j:
+            parent[root_j] = root_i
 
     merges_count = 0
     for i in range(n):
         for j in range(i + 1, n):
-            # Note: `dice_score` is now called directly as it's in the same module
-            dice_val = dice_score(masks[i], masks[j])
+            dice_val = dice_score(working_masks[i], working_masks[j])
             if dice_val > dice_threshold:
                 union(i, j)
                 merges_count += 1
                 print(f"DEBUG: Merged masks {i} and {j}, dice_score={dice_val:.3f}")
-    
+
     print(f"DEBUG: Total merges performed: {merges_count}")
-                
+
     groups = defaultdict(list)
-    for i in range(n):
-        groups[find(i)].append(i)
-        
-    merged_masks = []
+    for idx in range(n):
+        groups[find(idx)].append(idx)
+
+    merged_outputs: List[np.ndarray] = []
     for indices in groups.values():
-        merged_mask = np.zeros_like(masks[0], dtype=np.uint8)
+        merged_mask = np.zeros_like(working_masks[0], dtype=bool)
         for idx in indices:
-            merged_mask = np.logical_or(merged_mask, masks[idx])
-        merged_masks.append(merged_mask.astype(np.uint8))
-        
-    return merged_masks
+            merged_mask = np.logical_or(merged_mask, working_masks[idx])
+
+        if polygons_mode:
+            merged_uint8 = merged_mask.astype(np.uint8)
+            contours, _ = cv2.findContours(merged_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            for cnt in contours:
+                if cnt.shape[0] < 3:
+                    continue
+                contour = cnt.reshape(-1, 2) + min_xy
+                merged_outputs.append(contour.astype(np.int32))
+        else:
+            merged_outputs.append(merged_mask.astype(np.uint8))
+
+    return merged_outputs
 
 
 def dice_score(mask1: np.ndarray, mask2: np.ndarray) -> float:
