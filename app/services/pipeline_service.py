@@ -38,10 +38,19 @@ class PipelineService:
             logger.critical("pipeline_service.detection_init_failed", error=str(e), exc_info=True)
             raise
 
-        # Recognition can be heavy; initialize lazily on first use
+        # Load recognition service immediately if enabled
         pipeline_config = config.get('pipeline', {})
         self.enable_recognition = pipeline_config.get('enable_recognition', True)
         self.recognition_service = None  # type: ignore[assignment]
+
+        if self.enable_recognition:
+            try:
+                from app.services.recognition_service import RecognitionService as _RecognitionService
+                self.recognition_service = _RecognitionService(config['recognition'])
+                logger.info("pipeline_service.recognition_loaded_eagerly")
+            except Exception as e:
+                logger.critical("pipeline_service.recognition_init_failed", error=str(e), exc_info=True)
+                raise
         
         # Store debug configuration for recognition
         recognition_config = config.get('recognition', {})
@@ -75,16 +84,12 @@ class PipelineService:
         )
 
     def _ensure_recognition_loaded(self):
+        """Legacy method - recognition is now loaded eagerly in __init__."""
         if not self.enable_recognition:
             return
         if self.recognition_service is None:
-            try:
-                from app.services.recognition_service import RecognitionService as _RecognitionService  # local import
-                self.recognition_service = _RecognitionService(self._config['recognition'])
-                logger.info("pipeline_service.recognition_loaded")
-            except Exception as e:
-                logger.critical("pipeline_service.recognition_init_failed", error=str(e), exc_info=True)
-                raise
+            logger.warning("pipeline_service.recognition_not_loaded",
+                         msg="Recognition should have been loaded in __init__")
 
     def detect_lines(self, image: np.ndarray) -> List[list]:
         """Detects all line bounding boxes in a single image."""

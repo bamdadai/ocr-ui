@@ -73,6 +73,10 @@ class _OrientationCorrector:
         self.model_path: Optional[str] = cfg.get('path') or cfg.get('model_path')
         self._model: Optional[YOLO] = None
 
+        # Load model eagerly if enabled
+        if self.enabled:
+            self._ensure_loaded()
+
     def _ensure_loaded(self) -> bool:
         if not self.enabled:
             return False

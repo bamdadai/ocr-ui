@@ -95,6 +95,15 @@ class DetectionService:
 
         # Initialize PaddleOCR for line detection
         self.paddle_model = self._load_paddle_model(config.get('paddle_ocr', {}))
+
+        # Warmup: force model to fully load by running a dummy prediction
+        logger.info("detection_service.paddle_warmup_start")
+        dummy_img = np.zeros((100, 100, 3), dtype=np.uint8)
+        try:
+            _ = list(self.paddle_model.predict(dummy_img, batch_size=1))
+            logger.info("detection_service.paddle_warmup_complete")
+        except Exception as e:
+            logger.warning("detection_service.paddle_warmup_failed", error=str(e))
         self.model_params = {
             'word': {
                 'iou': config['word_detect']['iou'],
