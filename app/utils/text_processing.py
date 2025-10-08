@@ -77,17 +77,12 @@ def fix_dash_comma_spacing(text: str) -> str:
     # Pattern to match spaces around dashes and Persian commas
     # This handles cases like "word - word" -> "word-word" or "word ، word" -> "word،word"
     
-    # Handle spaced dash patterns: "- - -" or "- -" -> "-"
-    text = re.sub(r'(\s*-\s*)+', '-', text)
+    text = re.sub(r'(-+ -+)+', '-', text)
     
     # Handle spaced Persian comma patterns: "، ، ،" or "، ،" -> "،"
-    text = re.sub(r'(\s*،\s*)+', '،', text)
+    text = re.sub(r'(،+ ،+)+', '،', text)
     
-    # Remove multiple consecutive dashes (without spaces): "--" or "---" -> "-"
-    text = re.sub(r'-+', '-', text)
     
-    # Remove multiple consecutive Persian commas (without spaces): "،،" or "،،،" -> "،"
-    text = re.sub(r'،+', '،', text)
     
     return text
 

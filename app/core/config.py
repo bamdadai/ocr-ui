@@ -47,6 +47,11 @@ class OrientationConfig(BaseModel):
     device: Optional[str] = None  # if None, fallback to detection.device
     imgsz: int = 224
 
+class TextRenderingConfig(BaseModel):
+    """Settings for text rendering and line grouping."""
+    same_row_separator: str = " "
+    height_tolerance_pixels: int = 5
+
 class PipelineConfig(BaseModel):
     """General settings for the OCR pipeline."""
     debug: bool
@@ -80,6 +85,7 @@ class Settings(BaseSettings):
     detection: DetectionConfig
     recognition: RecognitionConfig
     pipeline: PipelineConfig
+    text_rendering: TextRenderingConfig
     # Support top-level orientation configuration as well (optional)
     orientation: Optional[OrientationConfig] = None
     valid_ocr_formats: List[str]

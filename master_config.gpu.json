@@ -47,6 +47,10 @@
     "debug": false,
     "enable_recognition": true
   },
+  "text_rendering": {
+    "same_row_separator": "\t",
+    "height_tolerance_pixels": 5
+  },
   "orientation": {
     "enabled": true,
     "path": "weights/rotation_classifier.pt",

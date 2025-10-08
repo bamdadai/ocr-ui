@@ -60,6 +60,11 @@ class PipelineService:
         self.word_crops_debug_path = Path(recognition_config.get('debug_word_crops_path', 'debug/word_crops'))
         self.word_polygons_debug_path = Path(recognition_config.get('debug_word_polygons_path', 'debug/word_polygons'))
 
+        # Text rendering configuration for line grouping
+        text_rendering_cfg = config.get('text_rendering', {})
+        self.same_row_separator: str = text_rendering_cfg.get('same_row_separator', '\t')
+        self.height_tolerance_pixels: int = text_rendering_cfg.get('height_tolerance_pixels', 5)
+
         # Orientation is now handled once at ingestion by tasks.process_ocr_task
         # Keep flags for logging/telemetry only
         orientation_cfg = (
@@ -153,7 +158,8 @@ class PipelineService:
                         'line_idx': line_idx
                     })
         
-        full_text = "\n".join(text for text, _ in text_of_lines)
+        # Group lines by height for natural reading order
+        full_text = self._group_lines_by_height(text_of_lines, line_boxes)
         overall_conf = sum(conf for _, conf in text_of_lines) / len(text_of_lines) if text_of_lines else 0.0
         
         # Save debug image with transcribed text if enabled
@@ -206,6 +212,66 @@ class PipelineService:
                 logger.warning("pipeline_service.word_crops_debug_failed", error=str(e), exc_info=True)
         
         return full_text, overall_conf
+
+    def _group_lines_by_height(self, text_of_lines: List[Tuple[str, float]], line_boxes: List[list]) -> str:
+        """
+        Groups lines that are at the same height (e.g., table cells, columns) and joins them
+        with a configurable separator instead of newlines.
+
+        Args:
+            text_of_lines: List of (text, confidence) tuples for each line
+            line_boxes: List of bounding boxes for each line [x, y, w, h]
+
+        Returns:
+            Full text with natural reading order
+        """
+        if not text_of_lines or not line_boxes:
+            return ""
+
+        # Create list of (y_position, text, box) tuples
+        lines_with_positions = []
+        for i, ((text, _), box) in enumerate(zip(text_of_lines, line_boxes)):
+            y_position = box[1]  # y coordinate of the line
+            lines_with_positions.append((y_position, text, box))
+
+        # Sort by y position (top to bottom)
+        lines_with_positions.sort(key=lambda x: x[0])
+
+        # Group lines by similar y positions
+        grouped_rows = []
+        current_row = []
+        current_y = None
+
+        for y_pos, text, box in lines_with_positions:
+            if current_y is None:
+                # First line
+                current_y = y_pos
+                current_row.append((box[0], text))  # Store (x_position, text)
+            elif abs(y_pos - current_y) <= self.height_tolerance_pixels:
+                # Same row - add to current row
+                current_row.append((box[0], text))
+            else:
+                # New row - save current row and start new one
+                if current_row:
+                    grouped_rows.append(current_row)
+                current_row = [(box[0], text)]
+                current_y = y_pos
+
+        # Don't forget the last row
+        if current_row:
+            grouped_rows.append(current_row)
+
+        # Build final text: within each row, sort by x position (right to left for RTL)
+        # then join rows with newlines
+        result_lines = []
+        for row in grouped_rows:
+            # Sort by x position (right to left)
+            row.sort(key=lambda x: x[0], reverse=True)
+            # Join texts in the row with the configured separator
+            row_text = self.same_row_separator.join(text for _, text in row)
+            result_lines.append(row_text)
+
+        return "\n".join(result_lines)
 
     def _recognize_line(self, line_crop: np.ndarray, word_polygons: list) -> Tuple[str, float, List[dict]]:
         """

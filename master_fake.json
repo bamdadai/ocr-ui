@@ -45,5 +45,9 @@
         "debug": true,
         "enable_recognition": true
     },
+    "text_rendering": {
+        "same_row_separator": " ",
+        "height_tolerance_pixels": 5
+    },
     "valid_ocr_formats": [".jpeg", ".jpg", ".png", ".pdf"]
 }
