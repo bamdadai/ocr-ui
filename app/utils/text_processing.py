@@ -158,6 +158,13 @@ def apply_custom_replacements(text: str, replacement_dict: dict = None, json_fil
     
     return text
 
+def remove_parentheses(text: str) -> str:
+    """Removes parentheses ( and ) from text and replaces them with spaces."""
+    # Replace both opening and closing parentheses with spaces
+    text = text.replace('(', ' ')
+    text = text.replace(')', ' ')
+    return text
+
 def fix_mixed_text_order(text: str) -> str:
     """Corrects display order for strings with mixed RTL and LTR text."""
     persian_pattern = re.compile(r'[\u0600-\u06FF]+')

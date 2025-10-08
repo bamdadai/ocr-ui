@@ -205,23 +205,27 @@ def postprocess_ocr_text(text: str, custom_replacements: dict = None, replacemen
         fix_dash_comma_spacing,
         convert_mixed_digit_sequences,
         apply_custom_replacements,
+        remove_parentheses,
     )
+
+    # Remove parentheses first (before other processing)
+    text = remove_parentheses(text)
 
     # Join spaced numbers first
     text = join_spaced_numbers(text)
 
     # Ensure digits adjacent to Persian digits use the Persian glyphs
     text = convert_mixed_digit_sequences(text)
-    
+
     # Fix dash positioning (move dashes from before numbers to after)
     text = fix_dash_positioning(text)
-    
+
     # Fix period positioning (move periods from before Persian numbers to after)
     text = fix_period_positioning(text)
-    
+
     # Fix dash and comma spacing (remove spaces around dashes and Persian commas)
     text = fix_dash_comma_spacing(text)
-    
+
     # Apply custom replacements if provided (either dict or JSON file)
     if custom_replacements or replacements_json_path:
         text = apply_custom_replacements(text, custom_replacements, replacements_json_path)
