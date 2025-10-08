@@ -278,6 +278,9 @@ body::before {
     line-height: 1.8;
     border: 1px solid var(--border-color);
     box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.06);
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
 }
 
 .loading-overlay {
@@ -366,6 +369,9 @@ body::before {
     box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.06);
     font-size: 1.1rem;
     line-height: 1.8;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
 }
 
 /* Animation keyframes */
@@ -399,32 +405,51 @@ body::before {
     .main-title {
         font-size: 2.2rem;
     }
-    
+
     .subtitle {
         font-size: 1.1rem;
     }
-    
+
     .upload-container {
         padding: 1.5rem;
-        margin: 0 1rem;
+        margin: 0 0.5rem;
     }
-    
+
     .upload-area {
         padding: 2.5rem 1rem;
     }
-    
+
     .upload-area i {
         font-size: 3rem;
     }
-    
+
     .btn-primary {
         padding: 0.6rem 2rem;
         font-size: 1rem;
     }
-    
+
     .result-card {
         padding: 1.5rem;
-        margin: 1rem;
+        margin: 1rem 0.5rem;
+    }
+
+    .ocr-text {
+        font-size: 1rem;
+        padding: 1rem;
+    }
+
+    .result-text-container .d-flex {
+        flex-direction: column;
+        align-items: stretch !important;
+    }
+
+    .result-text-container .d-flex .gap-2 {
+        gap: 0.5rem !important;
+    }
+
+    .result-text-container .btn {
+        width: 100%;
+        margin-bottom: 0.5rem;
     }
 }
 
@@ -602,6 +627,16 @@ body::before {
 /* Button container utilities */
 .d-flex.gap-2 > * + * {
     margin-right: 0.5rem;
+}
+
+/* Result text container - full width */
+.result-text-container {
+    width: 100%;
+    max-width: 100%;
+}
+
+.result-text-container .ocr-text {
+    min-height: 200px;
 }
 
 /* Image Preview Modal with Zoom */
