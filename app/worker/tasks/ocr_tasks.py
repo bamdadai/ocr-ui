@@ -100,7 +100,7 @@ def send_webhook_result(self, webhook_url: str, payload: dict, **kwargs):
     task_id = payload.get('task_id')
     retry_count = self.request.retries
 
-    logger.info(
+    logger.debug(
         "webhook.attempt.start",
         guid=guid,
         task_id=task_id,
@@ -119,7 +119,7 @@ def send_webhook_result(self, webhook_url: str, payload: dict, **kwargs):
         )
         response.raise_for_status()
 
-        logger.info(
+        logger.debug(
             "webhook.send.success",
             guid=guid,
             task_id=task_id,
@@ -273,7 +273,7 @@ def process_ocr_task(
         raise ValueError(f"Unsupported file format: {declared_format or 'unknown'}")
 
     correlation_id_var.set(correlation_context)
-    logger.info("ocr_task.received", guid=guid, task_id=request_id, file_format=declared_format)
+    logger.debug("ocr_task.received", guid=guid, task_id=request_id, file_format=declared_format)
 
     # Debug: Log the type and size of file_content
     logger.debug(
@@ -379,7 +379,7 @@ def finalize_and_notify_task(page_results: list, request_id: str, guid: str, web
         "error": ""
     }
 
-    logger.info("finalize.success", guid=guid, total_pages=len(all_pages), confidence=avg_confidence)
+    logger.debug("finalize.success", guid=guid, total_pages=len(all_pages), confidence=avg_confidence)
 
     if webhook_url:
         logger.debug(

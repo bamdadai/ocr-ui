@@ -26,10 +26,10 @@ class RecognitionService:
         
         
         # Load the model and its corresponding transforms
-        logger.info("recognition_service.loading_model", checkpoint=config['checkpoint'])
+        logger.debug("recognition_service.loading_model", checkpoint=config['checkpoint'])
         self.parseq = load_from_checkpoint(str(config['checkpoint'])).eval().to(self.device)
         self.img_transform = SceneTextDataModule.get_transform(self.parseq.hparams.img_size)
-        logger.info("recognition_service.initialized")
+        logger.debug("recognition_service.initialized")
 
     def preprocess(self, img: np.ndarray) -> torch.Tensor:
         """Preprocesses a single image to be fed into the model."""

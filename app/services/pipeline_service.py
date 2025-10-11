@@ -47,7 +47,7 @@ class PipelineService:
             try:
                 from app.services.recognition_service import RecognitionService as _RecognitionService
                 self.recognition_service = _RecognitionService(config['recognition'])
-                logger.info("pipeline_service.recognition_loaded_eagerly")
+                logger.debug("pipeline_service.recognition_loaded_eagerly")
             except Exception as e:
                 logger.critical("pipeline_service.recognition_init_failed", error=str(e), exc_info=True)
                 raise
@@ -80,7 +80,7 @@ class PipelineService:
         )
         self.orientation_imgsz: int = int(orientation_cfg.get('imgsz', 224))
 
-        logger.info(
+        logger.debug(
             "pipeline_service.initialized",
             recognition_enabled=self.enable_recognition,
             recognition_debug=self.recognition_debug,
@@ -172,7 +172,7 @@ class PipelineService:
                     save_dir=self.recognition_debug_path,
                     font_path=self.recognition_font_path
                 )
-                logger.info("pipeline_service.recognition_debug_saved", path=str(self.recognition_debug_path))
+                logger.debug("pipeline_service.recognition_debug_saved", path=str(self.recognition_debug_path))
             except Exception as e:
                 logger.warning("pipeline_service.recognition_debug_failed", error=str(e), exc_info=True)
         
@@ -197,8 +197,8 @@ class PipelineService:
                     save_dir=self.word_crops_debug_path,
                     page_id=page_id
                 )
-                logger.info("pipeline_service.word_crops_debug_saved", count=len(page_word_crops), path=str(self.word_crops_debug_path))
-                
+                logger.debug("pipeline_service.word_crops_debug_saved", count=len(page_word_crops), path=str(self.word_crops_debug_path))
+
                 # Save word polygons drawn on full page
                 save_word_polygons_on_page(
                     image=image,
@@ -207,7 +207,7 @@ class PipelineService:
                     save_dir=self.word_polygons_debug_path,
                     page_id=page_id
                 )
-                logger.info("pipeline_service.word_polygons_on_page_saved", count=len(page_word_polygons), path=str(self.word_polygons_debug_path))
+                logger.debug("pipeline_service.word_polygons_on_page_saved", count=len(page_word_polygons), path=str(self.word_polygons_debug_path))
             except Exception as e:
                 logger.warning("pipeline_service.word_crops_debug_failed", error=str(e), exc_info=True)
         

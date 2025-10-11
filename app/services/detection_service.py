@@ -54,10 +54,10 @@ def time_method(func: Callable) -> Callable:
             duration_ms = (end_time - start_time) * 1000
 
             # Log successful completion with timing
-            logger.info("method.timing",
-                       method=method_name,
-                       duration_ms=round(duration_ms, 2),
-                       success=True)
+            logger.debug("method.timing",
+                        method=method_name,
+                        duration_ms=round(duration_ms, 2),
+                        success=True)
 
             return result
 
@@ -86,7 +86,7 @@ class DetectionService:
         self.device = config['device']
         self.debug = config['debug']
         self.timing_enabled = config.get('timing_enabled', True)  # Enable method timing by default
-        logger.info("detection_service.init", debug=self.debug, debug_word_path=config.get('debug_word_path'), debug_line_path=config.get('debug_line_path'))
+        logger.debug("detection_service.init", debug=self.debug, debug_word_path=config.get('debug_word_path'), debug_line_path=config.get('debug_line_path'))
 
         # Initialize YOLO models for word detection
         self.models = {
@@ -97,11 +97,11 @@ class DetectionService:
         self.paddle_model = self._load_paddle_model(config.get('paddle_ocr', {}))
 
         # Warmup: force model to fully load by running a dummy prediction
-        logger.info("detection_service.paddle_warmup_start")
+        logger.debug("detection_service.paddle_warmup_start")
         dummy_img = np.zeros((100, 100, 3), dtype=np.uint8)
         try:
             _ = list(self.paddle_model.predict(dummy_img, batch_size=1))
-            logger.info("detection_service.paddle_warmup_complete")
+            logger.debug("detection_service.paddle_warmup_complete")
         except Exception as e:
             logger.warning("detection_service.paddle_warmup_failed", error=str(e))
         self.model_params = {
@@ -144,23 +144,23 @@ class DetectionService:
         # --- Word detection configuration ---
         word_cfg = config.get('word_detect', {})
 
-        logger.info("detection_service.initialized")
+        logger.debug("detection_service.initialized")
 
     @time_method
     def _load_yolo_model(self, model_path: str) -> YOLO:
         """Load YOLO model with compatibility checks and error handling."""
         try:
-            logger.info("detection_service.yolo_model_loading", model_path=model_path, device=self.device)
-            
+            logger.debug("detection_service.yolo_model_loading", model_path=model_path, device=self.device)
+
             # Load model with compatibility mode
             model = YOLO(model_path)
-            
+
             # Check model compatibility
             if hasattr(model.model, 'model'):
-                logger.info("detection_service.yolo_model_loaded", 
-                           model_path=model_path, 
-                           device=self.device,
-                           model_type=type(model.model).__name__)
+                logger.debug("detection_service.yolo_model_loaded",
+                            model_path=model_path,
+                            device=self.device,
+                            model_type=type(model.model).__name__)
             else:
                 logger.warning("detection_service.yolo_model_structure_unexpected", 
                               model_path=model_path)
@@ -181,17 +181,17 @@ class DetectionService:
         model_name = paddle_config.get('model_name', 'PP-OCRv5_server_det')
         model_kwargs = paddle_config.get('model_kwargs', {
         "model_dir": "/app/weights/PP-OCRv5_server_det_infer"})
-        logger.info("detection_service.loading_paddle_model", model_kwargs=model_kwargs)
+        logger.debug("detection_service.loading_paddle_model", model_kwargs=model_kwargs)
         return TextDetection(**model_kwargs)
 
     @time_method
     def predict_word_polygons(self, images: List[np.ndarray]) -> Dict[str, List]:
-        logger.info("detection_service.predicting", model_type="word", image_count=len(images))
+        logger.debug("detection_service.predicting", model_type="word", image_count=len(images))
         return {'word_polygons': self._predict(images, model_type='word')}
 
     @time_method
     def predict_line_boxes(self, images: List[np.ndarray]) -> Dict[str, List]:
-        logger.info("detection_service.predicting", model_type="line", image_count=len(images))
+        logger.debug("detection_service.predicting", model_type="line", image_count=len(images))
         # Use PaddleOCR for line detection
         processor_function = lambda img: self._predict_lines_paddle(img)
         results = self._process_in_optimal_batches(images, processor_function)
@@ -248,7 +248,7 @@ class DetectionService:
                 debug_img = draw_boxes(debug_img, line_boxes, color=(0, 0, 255))
                 out_path = os.path.join(debug_path_str, f"line_paddle_{uuid.uuid4().hex[:8]}.jpg")
                 cv2.imwrite(out_path, debug_img)
-                logger.info("detection_service.line_paddle_debug_saved", path=out_path)
+                logger.debug("detection_service.line_paddle_debug_saved", path=out_path)
             except Exception as e:
                 logger.warning("detection_service.line_paddle_debug_save_failed", error=str(e), exc_info=True)
 
@@ -309,7 +309,7 @@ class DetectionService:
             for cid in allowed:
                 mask |= (cls_tensor == cid)
             filtered = results[mask]
-            logger.info("detection_service.class_filter", model_type=model_type, kept=int(mask.sum().item()), total=len(cls_tensor))
+            logger.debug("detection_service.class_filter", model_type=model_type, kept=int(mask.sum().item()), total=len(cls_tensor))
             return filtered
         except Exception as e:
             logger.warning("detection_service.class_filter_failed", model_type=model_type, error=str(e))
@@ -374,18 +374,18 @@ class DetectionService:
                 fname = f"{model_type}_debug_{uuid.uuid4().hex[:8]}.jpg"
                 debug_path_str = str(self.debug_info[model_type]['path'])
                 out_path = os.path.join(debug_path_str, fname)
-                logger.info("detection_service.debug_saving", model_type=model_type, path=out_path)
+                logger.debug("detection_service.debug_saving", model_type=model_type, path=out_path)
                 os.makedirs(debug_path_str, exist_ok=True)
                 debug_image = image.copy()
                 debug_image = debug_draw_func(debug_image, post_processed)
                 success = cv2.imwrite(out_path, debug_image)
                 if success:
-                    logger.info("detection_service.debug_saved", model_type=model_type, path=out_path)
+                    logger.debug("detection_service.debug_saved", model_type=model_type, path=out_path)
                 else:
                     logger.warning("detection_service.debug_save_failed", model_type=model_type, path=out_path, reason="cv2.imwrite returned False")
             except Exception as e:
                 logger.warning("detection_service.debug_save_failed", model_type=model_type, error=str(e), exc_info=True)
-        logger.info("detection_service.single_image_done", model_type=model_type, duration_ms=int(duration * 1000))
+        logger.debug("detection_service.single_image_done", model_type=model_type, duration_ms=int(duration * 1000))
         return post_processed
 
     @time_method
@@ -397,21 +397,21 @@ class DetectionService:
         # Preferred path: segmentation masks -> polygons -> merge
         try:
             if word_result.masks is not None:
-                logger.info("detection_service.processing_masks", 
-                           masks_type=type(word_result.masks).__name__,
-                           has_data=hasattr(word_result.masks, 'data'))
-                
+                logger.debug("detection_service.processing_masks",
+                            masks_type=type(word_result.masks).__name__,
+                            has_data=hasattr(word_result.masks, 'data'))
+
                 polygons = get_polygons_from_masks(word_result.masks)
-                logger.info("detection_service.word_polygons_before_merge", 
-                           count=len(polygons), 
-                           dice_threshold=self.merging_iou)
+                logger.debug("detection_service.word_polygons_before_merge",
+                            count=len(polygons),
+                            dice_threshold=self.merging_iou)
                 
                 if polygons:
                     # Convert polygons back to numpy arrays for merging
                     polygon_arrays = [np.array(poly).reshape(-1, 2) for poly in polygons]
                     merged_polygons = merge_overlapping_masks(polygon_arrays, dice_threshold=self.merging_iou)
-                    logger.info("detection_service.word_polygons_after_merge", 
-                               count=len(merged_polygons))
+                    logger.debug("detection_service.word_polygons_after_merge",
+                                count=len(merged_polygons))
                     flattened = []
                     for poly in merged_polygons:
                         poly_arr = np.asarray(poly)
@@ -447,7 +447,7 @@ class DetectionService:
                 poly = np.array([[x1i, y1i], [x2i, y1i], [x2i, y2i], [x1i, y2i]], dtype=np.int32)
                 rect_polys.append(poly.reshape(-1).tolist())
             if rect_polys:
-                logger.info("detection_service.word_bbox_fallback", count=len(rect_polys))
+                logger.debug("detection_service.word_bbox_fallback", count=len(rect_polys))
             return rect_polys
         except Exception as e:
             logger.warning("detection_service.word_bbox_fallback_failed", error=str(e))
@@ -501,9 +501,9 @@ class DetectionService:
         final_confidences = confidences[keep_mask]
         
         if len(final_boxes) < len(boxes):
-            logger.info("detection_service.nested_boxes_removed", 
-                       original_count=len(boxes), 
-                       final_count=len(final_boxes))
+            logger.debug("detection_service.nested_boxes_removed",
+                        original_count=len(boxes),
+                        final_count=len(final_boxes))
         
         return final_boxes, final_confidences
 
@@ -526,16 +526,16 @@ class DetectionService:
         results, batch_size = [], min(self.max_batch_size, len(images))
         for i in range(0, len(images), batch_size):
             batch = images[i:i + batch_size]
-            logger.info("detection_service.batch.processing", batch_size=len(batch))
+            logger.debug("detection_service.batch.processing", batch_size=len(batch))
             results.extend(self._process_batch_parallel(batch, processor_function))
-            
+
             current_memory = get_current_memory_usage_mb()
             if current_memory > self.memory_limit_mb * 0.8:
                 batch_size = max(1, batch_size // 2)
                 logger.warning("detection_service.batch.memory_high", new_batch_size=batch_size, memory_mb=current_memory)
             elif current_memory < self.memory_limit_mb * 0.4 and batch_size < self.max_batch_size:
                 batch_size = min(self.max_batch_size, batch_size * 2)
-                logger.info("detection_service.batch.memory_low", new_batch_size=batch_size, memory_mb=current_memory)
+                logger.debug("detection_service.batch.memory_low", new_batch_size=batch_size, memory_mb=current_memory)
         return results
 
     @time_method
