@@ -1,7 +1,7 @@
 # app/core/logging_config.py
 
 import logging
-from logging.handlers import TimedRotatingFileHandler
+from logging.handlers import RotatingFileHandler
 import sys
 from contextvars import ContextVar
 from typing import Optional
@@ -19,12 +19,23 @@ def add_correlation_id(logger: WrappedLogger, method_name: str, event_dict: Even
         event_dict["correlation_id"] = correlation_id
     return event_dict
 
+class InfoErrorCriticalFilter(logging.Filter):
+    """Filter that only allows INFO, WARNING, ERROR, and CRITICAL level logs."""
+    def filter(self, record):
+        return record.levelno >= logging.INFO
+
+class DebugOnlyFilter(logging.Filter):
+    """Filter that only allows DEBUG level logs."""
+    def filter(self, record):
+        return record.levelno == logging.DEBUG
+
 def configure_logging():
     """
     Configures a sophisticated logging system using structlog and standard logging.
     - Logs are structured as JSON for machine-readability in files.
     - Logs are also sent to the console for development visibility.
     - Application and Celery logs are separated into different rotating files.
+    - DEBUG logs are separated from INFO/WARNING/ERROR/CRITICAL logs.
     """
     # 1. Define shared processors for structlog
     shared_processors = [
@@ -50,7 +61,7 @@ def configure_logging():
     )
 
     # 3. Define Handlers for different outputs
-    
+
     # --- Handler for Console Logs (human-readable) ---
     console_handler = logging.StreamHandler(sys.stdout)
     console_formatter = structlog.stdlib.ProcessorFormatter(
@@ -58,55 +69,84 @@ def configure_logging():
     )
     console_handler.setFormatter(console_formatter)
 
-    # --- Handler for Application File Logs (JSON format, rotating) ---
-    app_log_handler = TimedRotatingFileHandler(
-        filename=settings.LOG_FILE_PATH,
-        when="midnight",  # Rotate logs daily
-        backupCount=7,   # Keep 7 old log files
-        encoding="utf-8"
-    )
+    # --- JSON Formatter for file logs ---
     json_formatter = structlog.stdlib.ProcessorFormatter(
         processor=structlog.processors.JSONRenderer(),
     )
-    app_log_handler.setFormatter(json_formatter)
 
-    # --- Handler for Celery File Logs (JSON format, rotating) ---
+    # --- Handler for Application File Logs (INFO/WARNING/ERROR/CRITICAL) ---
+    app_log_handler = RotatingFileHandler(
+        filename=settings.LOG_FILE_PATH,
+        maxBytes=100 * 1024 * 1024,  # 100 MB
+        backupCount=7,   # Keep 7 old log files
+        encoding="utf-8"
+    )
+    app_log_handler.setFormatter(json_formatter)
+    app_log_handler.addFilter(InfoErrorCriticalFilter())
+
+    # --- Handler for Application Debug Logs (DEBUG only) ---
+    debug_log_path = settings.LOG_FILE_PATH.parent / "debug.log"
+    debug_log_handler = RotatingFileHandler(
+        filename=debug_log_path,
+        maxBytes=100 * 1024 * 1024,  # 100 MB
+        backupCount=7,
+        encoding="utf-8"
+    )
+    debug_log_handler.setFormatter(json_formatter)
+    debug_log_handler.addFilter(DebugOnlyFilter())
+
+    # --- Handler for Celery File Logs (INFO/WARNING/ERROR/CRITICAL) ---
     celery_log_path = settings.LOG_FILE_PATH.parent / "celery.log"
-    celery_log_handler = TimedRotatingFileHandler(
+    celery_log_handler = RotatingFileHandler(
         filename=celery_log_path,
-        when="midnight",
+        maxBytes=100 * 1024 * 1024,  # 100 MB
         backupCount=7,
         encoding="utf-8"
     )
     celery_log_handler.setFormatter(json_formatter)
+    celery_log_handler.addFilter(InfoErrorCriticalFilter())
+
+    # --- Handler for Celery Debug Logs (DEBUG only) ---
+    celery_debug_log_path = settings.LOG_FILE_PATH.parent / "celery_debug.log"
+    celery_debug_log_handler = RotatingFileHandler(
+        filename=celery_debug_log_path,
+        maxBytes=100 * 1024 * 1024,  # 100 MB
+        backupCount=7,
+        encoding="utf-8"
+    )
+    celery_debug_log_handler.setFormatter(json_formatter)
+    celery_debug_log_handler.addFilter(DebugOnlyFilter())
     
     # 4. Configure specific loggers to use the handlers
-    
+
     # --- Root Logger (for FastAPI app and general logs) ---
     root_logger = logging.getLogger()
-    root_logger.addHandler(console_handler) # Log to console
-    root_logger.addHandler(app_log_handler)   # Log to app.log
-    root_logger.setLevel(logging.DEBUG)  # Changed to DEBUG for more detailed logging
+    root_logger.addHandler(console_handler)      # Log to console
+    root_logger.addHandler(app_log_handler)      # Log INFO+ to app.log
+    root_logger.addHandler(debug_log_handler)    # Log DEBUG to debug.log
+    root_logger.setLevel(logging.DEBUG)          # Changed to DEBUG for more detailed logging
 
     # --- Celery Logger ---
     celery_logger = logging.getLogger("celery")
-    celery_logger.addHandler(console_handler)     # Log to console
-    celery_logger.addHandler(celery_log_handler) # Log to celery.log
-    celery_logger.setLevel(logging.DEBUG)  # Changed to DEBUG for more detailed logging
+    celery_logger.addHandler(console_handler)           # Log to console
+    celery_logger.addHandler(celery_log_handler)        # Log INFO+ to celery.log
+    celery_logger.addHandler(celery_debug_log_handler)  # Log DEBUG to celery_debug.log
+    celery_logger.setLevel(logging.DEBUG)               # Changed to DEBUG for more detailed logging
     celery_logger.propagate = False  # IMPORTANT: Prevents Celery logs from being duplicated in the root logger (app.log)
 
     # --- Application-specific loggers with detailed logging ---
     app_loggers = [
         "app.services",
-        "app.worker", 
+        "app.worker",
         "app.main",
         "app.core"
     ]
-    
+
     for logger_name in app_loggers:
         app_logger = logging.getLogger(logger_name)
         app_logger.addHandler(console_handler)
-        app_logger.addHandler(app_log_handler)
+        app_logger.addHandler(app_log_handler)      # Log INFO+ to app.log
+        app_logger.addHandler(debug_log_handler)    # Log DEBUG to debug.log
         app_logger.setLevel(logging.DEBUG)
         app_logger.propagate = False
 
@@ -133,7 +173,9 @@ def configure_logging():
     logger = structlog.get_logger(__name__)
     logger.info(
         "logging.configured",
-        description="Advanced logging configured successfully.",
+        description="Advanced logging configured successfully with separate debug logs.",
         app_log_path=str(settings.LOG_FILE_PATH),
-        celery_log_path=str(celery_log_path)
+        debug_log_path=str(debug_log_path),
+        celery_log_path=str(celery_log_path),
+        celery_debug_log_path=str(celery_debug_log_path)
     )
