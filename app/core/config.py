@@ -36,6 +36,7 @@ class RecognitionConfig(BaseModel):
     checkpoint: Path
     debug: bool
     debug_word_polygons_path: Path = PROJECT_ROOT / "debug/word_polygons"
+    debug_parts_path: Path = PROJECT_ROOT / "debug/parts"
 
 class OrientationConfig(BaseModel):
     """Settings for optional orientation (rotation) correction using a classification model."""
@@ -149,6 +150,7 @@ def setup_directories():
         settings.detection.debug_word_path.mkdir(parents=True, exist_ok=True)
         settings.detection.debug_line_path.mkdir(parents=True, exist_ok=True)
         settings.recognition.debug_word_polygons_path.mkdir(parents=True, exist_ok=True)
+        settings.recognition.debug_parts_path.mkdir(parents=True, exist_ok=True)
 
 # Run the function to create directories when the module is imported
 setup_directories()

@@ -2,8 +2,8 @@
 Utilities for splitting text lines into horizontal parts for recognition.
 
 This module implements intelligent line splitting that:
-- Filters words by area threshold
-- Splits lines into parts with width/height constraints
+- Splits lines into parts with width/height constraints (width ≤ 4× height)
+- Parts are split at word boundaries only
 - Extracts part images for recognition
 """
 
@@ -12,65 +12,6 @@ from typing import List, Tuple, Dict
 import structlog
 
 logger = structlog.get_logger(__name__)
-
-
-def filter_significant_words(
-    word_polygons: List[list],
-    line_box: List[int],
-    area_threshold: float = 0.10
-) -> List[list]:
-    """
-    Filter words whose area is at least area_threshold of the line's total area.
-
-    Args:
-        word_polygons: List of word polygons (each is a flat list of coords)
-        line_box: Line bounding box [x, y, w, h]
-        area_threshold: Minimum area ratio (default 0.10 = 10%)
-
-    Returns:
-        List of significant word polygons
-    """
-    line_area = line_box[2] * line_box[3]  # width * height
-    min_area = line_area * area_threshold
-
-    significant_words = []
-    for poly in word_polygons:
-        word_area = calculate_polygon_area(poly)
-        if word_area >= min_area:
-            significant_words.append(poly)
-
-    logger.debug(
-        "line_splitting.filter_words",
-        total_words=len(word_polygons),
-        significant_words=len(significant_words),
-        area_threshold=area_threshold
-    )
-
-    return significant_words
-
-
-def calculate_polygon_area(polygon: List[int]) -> float:
-    """
-    Calculate the area of a polygon using the Shoelace formula.
-
-    Args:
-        polygon: Flat list of coordinates [x1, y1, x2, y2, ...]
-
-    Returns:
-        Area of the polygon
-    """
-    # Reshape to (n, 2) array
-    points = np.array(polygon).reshape(-1, 2)
-
-    # Shoelace formula
-    x = points[:, 0]
-    y = points[:, 1]
-
-    area = 0.5 * np.abs(
-        np.dot(x, np.roll(y, 1)) - np.dot(y, np.roll(x, 1))
-    )
-
-    return float(area)
 
 
 def get_polygon_bbox(polygon: List[int]) -> Tuple[int, int, int, int]:
@@ -99,31 +40,31 @@ def split_line_into_parts(
     line_crop: np.ndarray,
     line_box: List[int],
     word_polygons: List[list],
-    max_width_height_ratio: float = 4.0,
-    max_words_per_part: int = 4,
-    area_threshold: float = 0.10
+    max_width_height_ratio: float = 4.0
 ) -> List[Dict]:
     """
     Split a line into horizontal parts for recognition.
 
     The line is split from right to left (RTL) into parts where:
     - Each part's width is at most max_width_height_ratio × part_height
-    - Each part contains at most max_words_per_part significant words
-    - Only words with area >= area_threshold × line_area are counted
+    - Parts are split at word boundaries only
+    - All words are included (no filtering)
+    - Guarantees at least one part per line (even if empty or exceeds width constraint)
+    - If only one part exists, it covers the entire line width
 
     Args:
         line_crop: The cropped line image
         line_box: Line bounding box in page coordinates [x, y, w, h]
         word_polygons: List of word polygons in line-local coordinates
         max_width_height_ratio: Maximum width/height ratio for each part
-        max_words_per_part: Maximum number of significant words per part
-        area_threshold: Minimum word area ratio to be counted
 
     Returns:
         List of part dictionaries, each containing:
             - 'crop': The part image (numpy array)
             - 'bbox': Bounding box in line-local coordinates (x, y, w, h)
-            - 'word_count': Number of significant words in this part
+            - 'word_count': Number of words in this part
+
+        Always returns at least one part per line. Single parts span the full line width.
     """
     if not word_polygons:
         # No words, return the entire line as one part
@@ -133,19 +74,8 @@ def split_line_into_parts(
             'word_count': 0
         }]
 
-    # Filter significant words
-    significant_words = filter_significant_words(word_polygons, line_box, area_threshold)
-
-    if not significant_words:
-        # No significant words, return the entire line as one part
-        return [{
-            'crop': line_crop,
-            'bbox': [0, 0, line_crop.shape[1], line_crop.shape[0]],
-            'word_count': 0
-        }]
-
-    # Get bounding boxes for significant words in line-local coordinates
-    word_bboxes = [get_polygon_bbox(poly) for poly in significant_words]
+    # Get bounding boxes for all words in line-local coordinates
+    word_bboxes = [get_polygon_bbox(poly) for poly in word_polygons]
 
     # Sort words from right to left (descending x)
     word_bboxes_sorted = sorted(word_bboxes, key=lambda b: b[0], reverse=True)
@@ -164,7 +94,7 @@ def split_line_into_parts(
         line_height=line_height,
         line_width=line_width,
         max_part_width=max_part_width,
-        significant_words=len(significant_words)
+        total_words=len(word_polygons)
     )
 
     # Process words from right to left
@@ -177,12 +107,11 @@ def split_line_into_parts(
         potential_x_max = max(current_x_max, word_x_max)
         potential_width = potential_x_max - potential_x_min
 
-        # Check if adding this word violates constraints
+        # Check if adding this word violates width constraint
         would_exceed_width = potential_width > max_part_width
-        would_exceed_word_count = len(current_words) >= max_words_per_part
 
-        if current_words and (would_exceed_width or would_exceed_word_count):
-            # Finalize current part
+        if current_words and would_exceed_width:
+            # Finalize current part at word boundary
             part_bbox = [
                 int(current_x_min),
                 0,
@@ -237,10 +166,33 @@ def split_line_into_parts(
             word_count=len(current_words)
         )
 
+    # Safety check: ensure at least one part exists (should always be true if words exist)
+    if not parts and word_polygons:
+        logger.warning(
+            "line_splitting.no_parts_created",
+            total_words=len(word_polygons),
+            message="No parts created despite having words, returning entire line"
+        )
+        return [{
+            'crop': line_crop,
+            'bbox': [0, 0, line_crop.shape[1], line_crop.shape[0]],
+            'word_count': len(word_polygons)
+        }]
+
+    # If there's only one part, expand it to cover the entire line width
+    if len(parts) == 1:
+        parts[0]['bbox'] = [0, 0, line_width, line_height]
+        parts[0]['crop'] = line_crop
+        logger.debug(
+            "line_splitting.single_part_expanded",
+            original_width=parts[0]['bbox'][2],
+            expanded_to_full_line_width=line_width
+        )
+
     logger.debug(
         "line_splitting.complete",
         total_parts=len(parts),
-        total_significant_words=len(significant_words)
+        total_words=len(word_polygons)
     )
 
     return parts

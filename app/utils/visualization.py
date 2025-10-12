@@ -116,7 +116,7 @@ def save_word_polygons_on_page(
 ) -> None:
     """
     Draws word polygons on the full page image at their exact locations.
-    
+
     Args:
         image: The full page image (BGR format from OpenCV)
         word_polygons: List of word polygons in page-level coordinates
@@ -126,19 +126,77 @@ def save_word_polygons_on_page(
     """
     if not word_polygons:
         return
-    
+
     save_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Create a copy of the image to draw on
     debug_image = image.copy()
-    
+
     # Draw all word polygons on the page
     debug_image = draw_polygons(debug_image, word_polygons, color=(255, 0, 0), thickness=2)
-    
+
     # Save the visualization
     page_prefix = f"{page_id}_" if page_id else ""
     unique_id = uuid.uuid4().hex[:8]
     filename = f"{page_prefix}words_on_page_{unique_id}.jpg"
     output_path = save_dir / filename
-    
+
+    cv2.imwrite(str(output_path), debug_image)
+
+
+def save_line_parts_visualization(
+    line_crop: np.ndarray,
+    parts: List[dict],
+    save_dir: Path,
+    line_id: str = None
+) -> None:
+    """
+    Visualizes part boundaries on the full line image for debugging.
+
+    Each part's bounding box is drawn on the line image with different colors.
+
+    Args:
+        line_crop: The full line image (BGR format from OpenCV)
+        parts: List of part dictionaries with 'bbox' key
+                bbox format: [x, y, w, h] in line-local coordinates
+        save_dir: Directory to save the debug image
+        line_id: Optional line identifier for filename
+    """
+    if not parts:
+        return
+
+    save_dir.mkdir(parents=True, exist_ok=True)
+
+    # Create a copy of the image to draw on
+    debug_image = line_crop.copy()
+
+    # Define colors for different parts (BGR format)
+    colors = [
+        (0, 255, 0),    # Green
+        (255, 0, 0),    # Blue
+        (0, 0, 255),    # Red
+        (255, 255, 0),  # Cyan
+        (255, 0, 255),  # Magenta
+        (0, 255, 255),  # Yellow
+        (128, 0, 128),  # Purple
+        (0, 128, 128),  # Teal
+    ]
+
+    # Draw each part boundary
+    for i, part in enumerate(parts):
+        bbox = part['bbox']  # [x, y, w, h]
+
+        # Get color for this part (cycle through colors if more than 8 parts)
+        color = colors[i % len(colors)]
+
+        # Draw rectangle for part boundary
+        x, y, w, h = bbox
+        cv2.rectangle(debug_image, (x, y), (x + w, y + h), color, thickness=3)
+
+    # Save the visualization
+    line_prefix = f"{line_id}_" if line_id else ""
+    unique_id = uuid.uuid4().hex[:8]
+    filename = f"{line_prefix}parts_{unique_id}.jpg"
+    output_path = save_dir / filename
+
     cv2.imwrite(str(output_path), debug_image)

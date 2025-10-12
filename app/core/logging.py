@@ -160,6 +160,9 @@ def configure_logging():
         "transformers": logging.WARNING,  # Reduce transformers noise
         "ultralytics": logging.WARNING,  # Reduce ultralytics noise
         "paddleocr": logging.WARNING,  # Reduce PaddleOCR noise
+        "multipart": logging.ERROR,  # Silence multipart form parser logging
+        "python_multipart": logging.ERROR,  # Silence multipart form parser logging
+        "starlette": logging.WARNING,  # Reduce Starlette noise
     }
     
     for logger_name, level in third_party_loggers.items():

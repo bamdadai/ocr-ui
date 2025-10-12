@@ -16,7 +16,7 @@ from app.utils.image_processing import (
     rebase_polygon
 )
 from app.utils.text_processing import fix_mixed_text_order
-from app.utils.visualization import save_word_polygons_on_page
+from app.utils.visualization import save_word_polygons_on_page, save_line_parts_visualization
 
 logger = structlog.get_logger(__name__)
 
@@ -56,6 +56,7 @@ class PipelineService:
         recognition_config = config.get('recognition', {})
         self.recognition_debug = recognition_config.get('debug', False)
         self.word_polygons_debug_path = Path(recognition_config.get('debug_word_polygons_path', 'debug/word_polygons'))
+        self.parts_debug_path = Path(recognition_config.get('debug_parts_path', 'debug/parts'))
 
         # Text rendering configuration for line grouping
         text_rendering_cfg = config.get('text_rendering', {})
@@ -140,7 +141,8 @@ class PipelineService:
             line_box = line_boxes[line_idx]
 
             # Recognize the line and get word data
-            line_text, line_conf, word_data = self._recognize_line(line_crop, word_polygons, line_box)
+            line_id = f"{page_id}_line{line_idx}" if page_id else f"line{line_idx}"
+            line_text, line_conf, word_data = self._recognize_line(line_crop, word_polygons, line_box, line_id)
             text_of_lines.append((line_text, line_conf))
             
             # Convert word polygons to page-level coordinates for debug
@@ -244,17 +246,19 @@ class PipelineService:
 
         return "\n".join(result_lines)
 
-    def _recognize_line(self, line_crop: np.ndarray, word_polygons: list, line_box: list = None) -> Tuple[str, float, List[dict]]:
+    def _recognize_line(self, line_crop: np.ndarray, word_polygons: list, line_box: list = None, line_id: str = None) -> Tuple[str, float, List[dict]]:
         """
         Helper to recognize text in a single line using part-based recognition.
 
         The line is split into horizontal parts based on word positions, and each part
-        is sent to the recognition model (instead of individual words).
+        is sent to the recognition model (instead of individual words). Parts are split
+        at word boundaries only, with a maximum width of 4× the line height.
 
         Args:
             line_crop: The cropped line image
             word_polygons: List of word polygons in line-local coordinates
-            line_box: Line bounding box in page coordinates [x, y, w, h] (optional, for area filtering)
+            line_box: Line bounding box in page coordinates [x, y, w, h] (optional)
+            line_id: Line identifier for debug output (optional)
 
         Returns:
             Tuple of (line_text, line_confidence, word_data_list)
@@ -271,9 +275,7 @@ class PipelineService:
             line_crop=line_crop,
             line_box=line_box,
             word_polygons=word_polygons,
-            max_width_height_ratio=4.0,
-            max_words_per_part=4,
-            area_threshold=0.10
+            max_width_height_ratio=4.0
         )
 
         logger.debug(
@@ -281,6 +283,25 @@ class PipelineService:
             num_parts=len(parts),
             num_words=len(word_polygons)
         )
+
+        # Save parts visualization if debug is enabled
+        if self.recognition_debug and parts:
+            try:
+                save_line_parts_visualization(
+                    line_crop=line_crop,
+                    parts=parts,
+                    save_dir=self.parts_debug_path,
+                    line_id=line_id
+                )
+                logger.debug("pipeline_service.parts_visualization_saved",
+                           line_id=line_id,
+                           num_parts=len(parts),
+                           path=str(self.parts_debug_path))
+            except Exception as e:
+                logger.warning("pipeline_service.parts_visualization_failed",
+                             line_id=line_id,
+                             error=str(e),
+                             exc_info=True)
 
         # Recognize each part
         part_crops = [part['crop'] for part in parts]
