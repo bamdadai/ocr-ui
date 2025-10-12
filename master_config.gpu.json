@@ -1,5 +1,5 @@
 {
-  "debug": true,
+  "debug": false,
   "logging": {
     "level": "DEBUG",
     "log_requests": true,
@@ -31,7 +31,7 @@
       "max_batch_size": 8,
       "memory_limit_mb": 16000
     },
-    "debug": true,
+    "debug": false,
     "debug_word_path": "debug/word_detections",
     "debug_line_path": "debug/line_detections"
   },
@@ -40,10 +40,10 @@
     "checkpoint": "weights/recognition_model.ckpt",
     "batch_size": 64,
     "min_conf": 0.8,
-    "debug": true
+    "debug": false
   },
   "pipeline": {
-    "debug": true,
+    "debug": false,
     "enable_recognition": true
   },
   "text_rendering": {
@@ -54,7 +54,7 @@
     "enabled": true,
     "path": "weights/rotation_classifier.pt",
     "device": "cuda:0",
-    "imgsz": 224
+    "imgsz": 512
   },
   "valid_ocr_formats": [".jpeg", ".jpg", ".png", ".pdf"]
 }
