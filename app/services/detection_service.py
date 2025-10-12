@@ -4,6 +4,7 @@ import numpy as np
 import torch
 import structlog
 import time
+from time import perf_counter_ns
 import os
 import functools
 from typing import List, Callable, Dict, Any, Literal, Optional, Sequence, Tuple, Iterable
@@ -19,6 +20,7 @@ from paddleocr import TextDetection
 from app.utils.visualization import draw_polygons, draw_boxes
 from app.utils.image_processing import get_polygons_from_masks
 from app.utils.common import get_current_memory_usage_mb
+from app.utils.performance_logging import log_stage_timing
 
 logger = structlog.get_logger(__name__)
 ModelType = Literal['word', 'line']
@@ -207,7 +209,19 @@ class DetectionService:
         H, W = img.shape[:2]
 
         # Run PaddleOCR detection
+        predict_start_ns = perf_counter_ns()
         output = self.paddle_model.predict(img, batch_size=1)
+        predict_end_ns = perf_counter_ns()
+        log_stage_timing(
+            "detection.paddle_predict",
+            start_ns=predict_start_ns,
+            end_ns=predict_end_ns,
+            extra={
+                "height": H,
+                "width": W,
+                "device": self.device,
+            },
+        )
         if not isinstance(output, Iterable) or len(output) == 0:
             logger.warning("detection_service.paddle_no_results")
             return []
@@ -343,12 +357,35 @@ class DetectionService:
                                          model_type=model_type)
                             break
 
+            inference_start_ns = perf_counter_ns()
             results: List[Results] = model(image, **model_params)
+            inference_end_ns = perf_counter_ns()
+            log_stage_timing(
+                f"detection.yolo_predict.{model_type}",
+                start_ns=inference_start_ns,
+                end_ns=inference_end_ns,
+                extra={
+                    "device": self.device,
+                    "height": int(image.shape[0]) if isinstance(image, np.ndarray) else None,
+                    "width": int(image.shape[1]) if isinstance(image, np.ndarray) else None,
+                },
+            )
             result = results[0]
 
             # Optional class filter
+            post_start_ns = perf_counter_ns()
             filtered = self._filter_by_classes(result, model_type)
             post_processed = post_process_func(filtered)
+            post_end_ns = perf_counter_ns()
+            log_stage_timing(
+                f"detection.yolo_postprocess.{model_type}",
+                start_ns=post_start_ns,
+                end_ns=post_end_ns,
+                extra={
+                    "device": self.device,
+                    "result_count": len(post_processed) if isinstance(post_processed, list) else None,
+                },
+            )
             
         except AttributeError as e:
             if "'Conv' object has no attribute 'bn'" in str(e):

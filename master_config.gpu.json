@@ -27,9 +27,9 @@
     },
     "parallel_processing": {
       "enabled": true,
-      "max_workers": 4,
+      "max_workers": 8,
       "max_batch_size": 8,
-      "memory_limit_mb": 8192
+      "memory_limit_mb": 16000
     },
     "debug": true,
     "debug_word_path": "debug/word_detections",
@@ -39,7 +39,7 @@
     "device": "cuda:0",
     "checkpoint": "weights/recognition_model.ckpt",
     "batch_size": 64,
-    "min_conf": 0.7,
+    "min_conf": 0.8,
     "debug": true
   },
   "pipeline": {

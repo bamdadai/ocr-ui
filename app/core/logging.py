@@ -170,6 +170,23 @@ def configure_logging():
     celery_logger.setLevel(logging.DEBUG)               # Changed to DEBUG for more detailed logging
     celery_logger.propagate = False  # IMPORTANT: Prevents Celery logs from being duplicated in the root logger (app.log)
 
+    performance_log_path = None
+    if settings.debug:
+        performance_log_path = settings.LOG_FILE_PATH.parent / "performance_debug.log"
+        performance_handler = RotatingFileHandler(
+            filename=performance_log_path,
+            maxBytes=50 * 1024 * 1024,
+            backupCount=5,
+            encoding="utf-8"
+        )
+        performance_handler.setFormatter(json_formatter)
+        performance_handler.addFilter(DebugOnlyFilter())
+
+        performance_logger = logging.getLogger("app.performance")
+        performance_logger.addHandler(performance_handler)
+        performance_logger.setLevel(logging.DEBUG)
+        performance_logger.propagate = False
+
     # --- Application-specific loggers with detailed logging ---
     app_loggers = [
         "app.services",
@@ -219,5 +236,6 @@ def configure_logging():
         celery_log_path=str(celery_log_path),
         celery_debug_log_path=str(celery_debug_log_path),
         error_log_path=str(error_log_path),
-        celery_error_log_path=str(celery_error_log_path)
+        celery_error_log_path=str(celery_error_log_path),
+        performance_log_path=str(performance_log_path) if performance_log_path else None
     )

@@ -1,7 +1,8 @@
-from typing import List, Tuple, TYPE_CHECKING
+from typing import List, Tuple, TYPE_CHECKING, Optional, Dict, Any
 import numpy as np
 import structlog
 from pathlib import Path
+from time import perf_counter_ns
 
 # NOTE: Defer heavy service imports to runtime to avoid ImportError masking due to import-time failures
 # (e.g., missing CUDA libs, model weights, or optional deps). Use TYPE_CHECKING for hints only.
@@ -17,6 +18,7 @@ from app.utils.image_processing import (
 )
 from app.utils.text_processing import fix_mixed_text_order
 from app.utils.visualization import save_word_polygons_on_page, save_line_parts_visualization
+from app.utils.performance_logging import log_stage_timing
 
 logger = structlog.get_logger(__name__)
 
@@ -94,22 +96,64 @@ class PipelineService:
             logger.warning("pipeline_service.recognition_not_loaded",
                          msg="Recognition should have been loaded in __init__")
 
-    def detect_lines(self, image: np.ndarray) -> List[list]:
+    def detect_lines(self, image: np.ndarray, telemetry: Optional[Dict[str, Any]] = None) -> List[list]:
         """Detects all line bounding boxes in a single image."""
         # Image is already oriented at ingestion; don't rotate here
+        start_ns = perf_counter_ns()
         line_boxes = self.detection_service.predict_line_boxes([image])['line_boxes'][0]
+        end_ns = perf_counter_ns()
+        log_stage_timing(
+            "pipeline.detect_lines.predict",
+            start_ns=start_ns,
+            end_ns=end_ns,
+            request_id=telemetry.get("request_id") if telemetry else None,
+            page_index=telemetry.get("page_index") if telemetry else None,
+            extra={
+                "line_count": len(line_boxes),
+                "height": int(image.shape[0]),
+                "width": int(image.shape[1]),
+                "device": getattr(self.detection_service, "device", None),
+            },
+        )
         # Sort lines top-to-bottom for correct reading order.
         return sorted(line_boxes, key=lambda box: box[1])
 
-    def detect_words(self, image: np.ndarray, line_boxes: List[list]) -> List[list]:
+    def detect_words(self, image: np.ndarray, line_boxes: List[list], telemetry: Optional[Dict[str, Any]] = None) -> List[list]:
         """Detects all word polygons within the given line boxes for an image."""
         if not line_boxes:
             return []
         # Image is already oriented at ingestion; don't rotate here
+        crop_start_ns = perf_counter_ns()
         line_crops = crop_boxes_from_image(line_boxes, image)
-        return self.detection_service.predict_word_polygons(line_crops)['word_polygons']
+        crop_end_ns = perf_counter_ns()
+        log_stage_timing(
+            "pipeline.detect_words.crop_lines",
+            start_ns=crop_start_ns,
+            end_ns=crop_end_ns,
+            request_id=telemetry.get("request_id") if telemetry else None,
+            page_index=telemetry.get("page_index") if telemetry else None,
+            extra={"line_count": len(line_boxes)},
+        )
+        detect_start_ns = perf_counter_ns()
+        word_polygons = self.detection_service.predict_word_polygons(line_crops)['word_polygons']
+        detect_end_ns = perf_counter_ns()
+        total_words = sum(len(polys) for polys in word_polygons if isinstance(polys, list))
+        log_stage_timing(
+            "pipeline.detect_words.predict",
+            start_ns=detect_start_ns,
+            end_ns=detect_end_ns,
+            request_id=telemetry.get("request_id") if telemetry else None,
+            page_index=telemetry.get("page_index") if telemetry else None,
+            extra={
+                "line_count": len(line_boxes),
+                "word_group_count": len(word_polygons),
+                "word_count": total_words,
+                "device": getattr(self.detection_service, "device", None),
+            },
+        )
+        return word_polygons
 
-    def recognize_page(self, image: np.ndarray, line_boxes: List[list], word_polygons_per_line: List[list], page_id: str = None) -> Tuple[str, float]:
+    def recognize_page(self, image: np.ndarray, line_boxes: List[list], word_polygons_per_line: List[list], page_id: str = None, telemetry: Optional[Dict[str, Any]] = None) -> Tuple[str, float]:
         """
         Recognizes text for an entire page and returns the full text and average confidence.
         
@@ -127,7 +171,17 @@ class PipelineService:
         assert self.recognition_service is not None  # for type checkers
 
         # Image is already oriented at ingestion; don't rotate here
+        crop_start_ns = perf_counter_ns()
         line_crops = crop_boxes_from_image(line_boxes, image)
+        crop_end_ns = perf_counter_ns()
+        log_stage_timing(
+            "pipeline.recognize_page.crop_lines",
+            start_ns=crop_start_ns,
+            end_ns=crop_end_ns,
+            request_id=telemetry.get("request_id") if telemetry else None,
+            page_index=telemetry.get("page_index") if telemetry else None,
+            extra={"line_count": len(line_boxes)},
+        )
         text_of_lines = []
         
         # Collect all word data with page-level coordinates for debug output
@@ -142,7 +196,19 @@ class PipelineService:
 
             # Recognize the line and get word data
             line_id = f"{page_id}_line{line_idx}" if page_id else f"line{line_idx}"
-            line_text, line_conf, word_data = self._recognize_line(line_crop, word_polygons, line_box, line_id)
+            line_text, line_conf, word_data = self._recognize_line(
+                line_crop,
+                word_polygons,
+                line_box,
+                line_id,
+                telemetry={
+                    "request_id": telemetry.get("request_id") if telemetry else None,
+                    "page_index": telemetry.get("page_index") if telemetry else None,
+                    "line_index": line_idx,
+                    "line_height": int(line_box[3]),
+                    "line_width": int(line_box[2]),
+                } if telemetry else None
+            )
             text_of_lines.append((line_text, line_conf))
             
             # Convert word polygons to page-level coordinates for debug
@@ -158,7 +224,17 @@ class PipelineService:
                     })
         
         # Group lines by height for natural reading order
+        group_start_ns = perf_counter_ns()
         full_text = self._group_lines_by_height(text_of_lines, line_boxes)
+        group_end_ns = perf_counter_ns()
+        log_stage_timing(
+            "pipeline.recognize_page.group_lines",
+            start_ns=group_start_ns,
+            end_ns=group_end_ns,
+            request_id=telemetry.get("request_id") if telemetry else None,
+            page_index=telemetry.get("page_index") if telemetry else None,
+            extra={"line_count": len(text_of_lines)},
+        )
         overall_conf = sum(conf for _, conf in text_of_lines) / len(text_of_lines) if text_of_lines else 0.0
         
         # Save word polygons visualization from full page
@@ -246,7 +322,7 @@ class PipelineService:
 
         return "\n".join(result_lines)
 
-    def _recognize_line(self, line_crop: np.ndarray, word_polygons: list, line_box: list = None, line_id: str = None) -> Tuple[str, float, List[dict]]:
+    def _recognize_line(self, line_crop: np.ndarray, word_polygons: list, line_box: list = None, line_id: str = None, telemetry: Optional[Dict[str, Any]] = None) -> Tuple[str, float, List[dict]]:
         """
         Helper to recognize text in a single line using part-based recognition.
 
@@ -271,11 +347,33 @@ class PipelineService:
             line_box = [0, 0, line_crop.shape[1], line_crop.shape[0]]
 
         # Split line into parts
+        split_start_ns = perf_counter_ns()
         parts = split_line_into_parts(
             line_crop=line_crop,
             line_box=line_box,
             word_polygons=word_polygons,
             max_width_height_ratio=4.0
+        )
+        split_end_ns = perf_counter_ns()
+
+        log_stage_timing(
+            "pipeline.recognize_line.split",
+            start_ns=split_start_ns,
+            end_ns=split_end_ns,
+            request_id=telemetry.get("request_id") if telemetry else None,
+            page_index=telemetry.get("page_index") if telemetry else None,
+            extra={
+                "line_id": line_id,
+                "line_index": telemetry.get("line_index") if telemetry else None,
+                "part_count": len(parts),
+                "word_count": len(word_polygons),
+                "line_height": telemetry.get("line_height") if telemetry else None,
+                "line_width": telemetry.get("line_width") if telemetry else None,
+            } if telemetry else {
+                "line_id": line_id,
+                "part_count": len(parts),
+                "word_count": len(word_polygons),
+            },
         )
 
         logger.debug(
@@ -305,7 +403,25 @@ class PipelineService:
 
         # Recognize each part
         part_crops = [part['crop'] for part in parts]
+        recognize_start_ns = perf_counter_ns()
         part_texts_with_probs = self.recognition_service(part_crops)  # type: ignore[misc]
+        recognize_end_ns = perf_counter_ns()
+        log_stage_timing(
+            "pipeline.recognize_line.recognize_parts",
+            start_ns=recognize_start_ns,
+            end_ns=recognize_end_ns,
+            request_id=telemetry.get("request_id") if telemetry else None,
+            page_index=telemetry.get("page_index") if telemetry else None,
+            extra={
+                "line_id": line_id,
+                "line_index": telemetry.get("line_index") if telemetry else None,
+                "part_count": len(part_crops),
+                "device": getattr(self.recognition_service, "device", None),
+            } if telemetry else {
+                "line_id": line_id,
+                "part_count": len(part_crops),
+            },
+        )
 
         # Combine part texts (right to left, already ordered by split_line_into_parts)
         part_texts = []

@@ -7,6 +7,7 @@ import numpy as np
 import requests
 import structlog
 import re
+from time import perf_counter_ns
 from pathlib import Path
 from celery import chain, group
 from requests.exceptions import RequestException
@@ -20,6 +21,7 @@ from app.worker.celery_app import app
 from app.worker.state_manager import StateManager
 from app.core.logging import correlation_id_var
 from app.utils.orientation import correct_images  # NEW
+from app.utils.performance_logging import log_stage_timing  # NEW
 
 if TYPE_CHECKING:
     # Only for type checkers; not executed at runtime
@@ -67,9 +69,26 @@ def detect_lines_task(self, request_id: str, page_index: int) -> int:
     pipeline = get_pipeline_service()
     state = StateManager(request_id)
     image = state.load_page_image(page_index)
-    line_boxes = pipeline.detect_lines(image)
+    start_ns = perf_counter_ns()
+    telemetry = {"request_id": request_id, "page_index": page_index}
+    line_boxes = pipeline.detect_lines(image, telemetry=telemetry)
+    end_ns = perf_counter_ns()
+    duration_ns = end_ns - start_ns
     state.save_line_boxes(page_index, line_boxes)
     logger.debug("detect_lines.success", page=page_index + 1, lines_found=len(line_boxes))
+    log_stage_timing(
+        "detect_lines",
+        duration_ns=duration_ns,
+        request_id=request_id,
+        page_index=page_index,
+        start_ns=start_ns,
+        end_ns=end_ns,
+        extra={
+            "line_count": len(line_boxes),
+            "height": int(image.shape[0]),
+            "width": int(image.shape[1]),
+        },
+    )
     return page_index
 
 @app.task(name="ocr.pipeline.detect_words", acks_late=True, bind=True)
@@ -78,9 +97,31 @@ def detect_words_task(self, request_id: str, page_index: int) -> int:
     state = StateManager(request_id)
     image = state.load_page_image(page_index)
     line_boxes = state.load_line_boxes(page_index)
-    word_polygons = pipeline.detect_words(image, line_boxes)
+    start_ns = perf_counter_ns()
+    telemetry = {"request_id": request_id, "page_index": page_index}
+    word_polygons = pipeline.detect_words(image, line_boxes, telemetry=telemetry)
+    end_ns = perf_counter_ns()
+    duration_ns = end_ns - start_ns
     state.save_word_polygons(page_index, word_polygons)
     logger.debug("detect_words.success", page=page_index + 1)
+    total_words = 0
+    if isinstance(word_polygons, list):
+        for group in word_polygons:
+            if isinstance(group, list):
+                total_words += len(group)
+    log_stage_timing(
+        "detect_words",
+        duration_ns=duration_ns,
+        request_id=request_id,
+        page_index=page_index,
+        start_ns=start_ns,
+        end_ns=end_ns,
+        extra={
+            "line_count": len(line_boxes),
+            "word_group_count": len(word_polygons) if isinstance(word_polygons, list) else None,
+            "word_count": total_words,
+        },
+    )
     return page_index
 
 @app.task(name="ocr.pipeline.recognize_page", acks_late=True, bind=True)
@@ -92,9 +133,31 @@ def recognize_page_task(self, request_id: str, page_index: int) -> dict:
     page_id = f"page{page_index}"
     line_boxes = state.load_line_boxes(page_index)
     word_polygons = state.load_word_polygons(page_index)
-    full_text, confidence = pipeline.recognize_page(image, line_boxes, word_polygons, page_id=page_id)
+    start_ns = perf_counter_ns()
+    telemetry = {"request_id": request_id, "page_index": page_index}
+    full_text, confidence = pipeline.recognize_page(
+        image,
+        line_boxes,
+        word_polygons,
+        page_id=page_id,
+        telemetry=telemetry
+    )
+    end_ns = perf_counter_ns()
+    duration_ns = end_ns - start_ns
     state.save_page_result(page_index, full_text, confidence)
     logger.debug("recognize_page.success", page=page_index + 1, confidence=confidence)
+    log_stage_timing(
+        "recognize_page",
+        duration_ns=duration_ns,
+        request_id=request_id,
+        page_index=page_index,
+        start_ns=start_ns,
+        end_ns=end_ns,
+        extra={
+            "char_count": len(full_text) if isinstance(full_text, str) else None,
+            "confidence": confidence,
+        },
+    )
     return {"page_index": page_index}
 
 @app.task(name='app.worker.tasks.send_webhook_result', bind=True, autoretry_for=(RequestException,), retry_kwargs={"max_retries": 3, "countdown": 10})
@@ -315,7 +378,17 @@ def process_ocr_task(
             images = [decoded_image]
 
         # NEW: Rotate images upright ONCE at the ingestion stage, so all downstream coordinates match
+        orientation_start_ns = perf_counter_ns()
         images = correct_images(images)
+        orientation_end_ns = perf_counter_ns()
+        log_stage_timing(
+            "orientation_correct",
+            duration_ns=orientation_end_ns - orientation_start_ns,
+            request_id=request_id,
+            start_ns=orientation_start_ns,
+            end_ns=orientation_end_ns,
+            extra={"page_count": len(images)}
+        )
 
         state = StateManager(request_id)
         state.save_initial_images(images)
