@@ -36,6 +36,11 @@ class StateManager:
         redis_key = self._get_key(key)
         redis_client.set(redis_key, pickle.dumps(data), ex=self.ttl_seconds)
 
+    def _delete_key(self, key: str):
+        """Removes a Redis key if it exists."""
+        redis_key = self._get_key(key)
+        redis_client.delete(redis_key)
+
     def _get_data(self, key: str) -> Any:
         """Retrieves and deserializes data from Redis."""
         redis_key = self._get_key(key)
@@ -47,16 +52,37 @@ class StateManager:
     # --- Public methods for managing specific workflow data ---
 
     def save_initial_images(self, images: List[np.ndarray]):
-        """Saves the list of initial page images to Redis."""
-        self._set_data("initial_images", images)
+        """
+        Saves the decoded page images. Each page is stored under its own Redis key
+        so we do not push massive blobs through a single SET command.
+        """
+        try:
+            existing_indices = self.load_page_indices()
+        except KeyError:
+            existing_indices = []
+
+        for index in existing_indices:
+            self._delete_key(f"initial_image:{index}")
+
+        self._delete_key("initial_images")
+
+        for index, image in enumerate(images):
+            self._set_data(f"initial_image:{index}", image)
+
         self._set_data("page_indices", list(range(len(images))))
 
     def load_page_image(self, page_index: int) -> np.ndarray:
-        """Loads a single page image from the stored list."""
-        images = self._get_data("initial_images")
-        if page_index >= len(images):
-            raise IndexError("Page index out of range.")
-        return images[page_index]
+        """
+        Loads a single page image. Prefer the per-page key, but fall back to the
+        legacy list-based storage if it still exists for older tasks.
+        """
+        try:
+            return self._get_data(f"initial_image:{page_index}")
+        except KeyError:
+            images = self._get_data("initial_images")
+            if page_index >= len(images):
+                raise IndexError("Page index out of range.")
+            return images[page_index]
 
     def save_line_boxes(self, page_index: int, boxes: list):
         """Stores detected line boxes for a page."""
