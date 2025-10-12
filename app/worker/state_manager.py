@@ -49,6 +49,7 @@ class StateManager:
     def save_initial_images(self, images: List[np.ndarray]):
         """Saves the list of initial page images to Redis."""
         self._set_data("initial_images", images)
+        self._set_data("page_indices", list(range(len(images))))
 
     def load_page_image(self, page_index: int) -> np.ndarray:
         """Loads a single page image from the stored list."""
@@ -56,6 +57,26 @@ class StateManager:
         if page_index >= len(images):
             raise IndexError("Page index out of range.")
         return images[page_index]
+
+    def save_line_boxes(self, page_index: int, boxes: list):
+        """Stores detected line boxes for a page."""
+        self._set_data(f"line_boxes:{page_index}", boxes)
+
+    def load_line_boxes(self, page_index: int) -> list:
+        """Retrieves detected line boxes for a page."""
+        return self._get_data(f"line_boxes:{page_index}")
+
+    def save_word_polygons(self, page_index: int, polygons: list):
+        """Stores detected word polygons for a page."""
+        self._set_data(f"word_polygons:{page_index}", polygons)
+
+    def load_word_polygons(self, page_index: int) -> list:
+        """Retrieves detected word polygons for a page."""
+        return self._get_data(f"word_polygons:{page_index}")
+
+    def load_page_indices(self) -> List[int]:
+        """Returns the list of page indices for this request."""
+        return self._get_data("page_indices")
 
     def save_page_result(self, page_index: int, text: str, confidence: float):
         """Saves the final OCR result for a single page."""

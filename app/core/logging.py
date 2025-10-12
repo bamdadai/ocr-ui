@@ -29,6 +29,11 @@ class DebugOnlyFilter(logging.Filter):
     def filter(self, record):
         return record.levelno == logging.DEBUG
 
+class ErrorCriticalFilter(logging.Filter):
+    """Filter that only allows ERROR and CRITICAL level logs."""
+    def filter(self, record):
+        return record.levelno >= logging.ERROR
+
 def configure_logging():
     """
     Configures a sophisticated logging system using structlog and standard logging.
@@ -36,6 +41,7 @@ def configure_logging():
     - Logs are also sent to the console for development visibility.
     - Application and Celery logs are separated into different rotating files.
     - DEBUG logs are separated from INFO/WARNING/ERROR/CRITICAL logs.
+    - ERROR and CRITICAL events are mirrored to dedicated error log files.
     """
     # 1. Define shared processors for structlog
     shared_processors = [
@@ -43,6 +49,12 @@ def configure_logging():
         structlog.stdlib.add_logger_name,
         structlog.stdlib.add_log_level,
         structlog.stdlib.PositionalArgumentsFormatter(),
+        structlog.processors.CallsiteParameterAdder(
+            parameters=(
+                structlog.processors.CallsiteParameter.FILENAME,
+                structlog.processors.CallsiteParameter.LINENO,
+            )
+        ),
         add_correlation_id,
         structlog.processors.TimeStamper(fmt="iso", utc=True),
         structlog.processors.StackInfoRenderer(),
@@ -84,6 +96,17 @@ def configure_logging():
     app_log_handler.setFormatter(json_formatter)
     app_log_handler.addFilter(InfoErrorCriticalFilter())
 
+    # --- Handler for Application Error Logs (ERROR/CRITICAL only) ---
+    error_log_path = settings.LOG_FILE_PATH.parent / "errors.log"
+    error_log_handler = RotatingFileHandler(
+        filename=error_log_path,
+        maxBytes=100 * 1024 * 1024,  # 100 MB
+        backupCount=7,
+        encoding="utf-8"
+    )
+    error_log_handler.setFormatter(json_formatter)
+    error_log_handler.addFilter(ErrorCriticalFilter())
+
     # --- Handler for Application Debug Logs (DEBUG only) ---
     debug_log_path = settings.LOG_FILE_PATH.parent / "debug.log"
     debug_log_handler = RotatingFileHandler(
@@ -106,6 +129,17 @@ def configure_logging():
     celery_log_handler.setFormatter(json_formatter)
     celery_log_handler.addFilter(InfoErrorCriticalFilter())
 
+    # --- Handler for Celery Error Logs (ERROR/CRITICAL only) ---
+    celery_error_log_path = settings.LOG_FILE_PATH.parent / "celery_errors.log"
+    celery_error_log_handler = RotatingFileHandler(
+        filename=celery_error_log_path,
+        maxBytes=100 * 1024 * 1024,  # 100 MB
+        backupCount=7,
+        encoding="utf-8"
+    )
+    celery_error_log_handler.setFormatter(json_formatter)
+    celery_error_log_handler.addFilter(ErrorCriticalFilter())
+
     # --- Handler for Celery Debug Logs (DEBUG only) ---
     celery_debug_log_path = settings.LOG_FILE_PATH.parent / "celery_debug.log"
     celery_debug_log_handler = RotatingFileHandler(
@@ -123,6 +157,7 @@ def configure_logging():
     root_logger = logging.getLogger()
     root_logger.addHandler(console_handler)      # Log to console
     root_logger.addHandler(app_log_handler)      # Log INFO+ to app.log
+    root_logger.addHandler(error_log_handler)    # Log ERROR+ to errors.log
     root_logger.addHandler(debug_log_handler)    # Log DEBUG to debug.log
     root_logger.setLevel(logging.DEBUG)          # Changed to DEBUG for more detailed logging
 
@@ -130,6 +165,7 @@ def configure_logging():
     celery_logger = logging.getLogger("celery")
     celery_logger.addHandler(console_handler)           # Log to console
     celery_logger.addHandler(celery_log_handler)        # Log INFO+ to celery.log
+    celery_logger.addHandler(celery_error_log_handler)  # Log ERROR+ to celery_errors.log
     celery_logger.addHandler(celery_debug_log_handler)  # Log DEBUG to celery_debug.log
     celery_logger.setLevel(logging.DEBUG)               # Changed to DEBUG for more detailed logging
     celery_logger.propagate = False  # IMPORTANT: Prevents Celery logs from being duplicated in the root logger (app.log)
@@ -146,6 +182,7 @@ def configure_logging():
         app_logger = logging.getLogger(logger_name)
         app_logger.addHandler(console_handler)
         app_logger.addHandler(app_log_handler)      # Log INFO+ to app.log
+        app_logger.addHandler(error_log_handler)    # Log ERROR+ to errors.log
         app_logger.addHandler(debug_log_handler)    # Log DEBUG to debug.log
         app_logger.setLevel(logging.DEBUG)
         app_logger.propagate = False
@@ -176,9 +213,11 @@ def configure_logging():
     logger = structlog.get_logger(__name__)
     logger.info(
         "logging.configured",
-        description="Advanced logging configured successfully with separate debug logs.",
+        description="Advanced logging configured successfully with separate debug and error logs.",
         app_log_path=str(settings.LOG_FILE_PATH),
         debug_log_path=str(debug_log_path),
         celery_log_path=str(celery_log_path),
-        celery_debug_log_path=str(celery_debug_log_path)
+        celery_debug_log_path=str(celery_debug_log_path),
+        error_log_path=str(error_log_path),
+        celery_error_log_path=str(celery_error_log_path)
     )

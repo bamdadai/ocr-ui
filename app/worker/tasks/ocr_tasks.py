@@ -8,7 +8,7 @@ import requests
 import structlog
 import re
 from pathlib import Path
-from celery import chain, group, chord
+from celery import chain, group
 from requests.exceptions import RequestException
 from typing import TYPE_CHECKING
 import sys
@@ -63,36 +63,39 @@ def get_pipeline_service() -> 'PipelineService':
     return pipeline_singleton
 
 @app.task(name="ocr.pipeline.detect_lines", acks_late=True, bind=True)
-def detect_lines_task(self, context: dict) -> dict:
+def detect_lines_task(self, request_id: str, page_index: int) -> int:
     pipeline = get_pipeline_service()
-    state = StateManager(context["request_id"])
-    image = state.load_page_image(context["page_index"])
+    state = StateManager(request_id)
+    image = state.load_page_image(page_index)
     line_boxes = pipeline.detect_lines(image)
-    context["line_boxes"] = line_boxes
-    logger.debug("detect_lines.success", page=context["page_index"] + 1, lines_found=len(line_boxes))
-    return context
+    state.save_line_boxes(page_index, line_boxes)
+    logger.debug("detect_lines.success", page=page_index + 1, lines_found=len(line_boxes))
+    return page_index
 
 @app.task(name="ocr.pipeline.detect_words", acks_late=True, bind=True)
-def detect_words_task(self, context: dict) -> dict:
+def detect_words_task(self, request_id: str, page_index: int) -> int:
     pipeline = get_pipeline_service()
-    state = StateManager(context["request_id"])
-    image = state.load_page_image(context["page_index"])
-    word_polygons = pipeline.detect_words(image, context["line_boxes"])
-    context["word_polygons"] = word_polygons
-    logger.debug("detect_words.success", page=context["page_index"] + 1)
-    return context
+    state = StateManager(request_id)
+    image = state.load_page_image(page_index)
+    line_boxes = state.load_line_boxes(page_index)
+    word_polygons = pipeline.detect_words(image, line_boxes)
+    state.save_word_polygons(page_index, word_polygons)
+    logger.debug("detect_words.success", page=page_index + 1)
+    return page_index
 
 @app.task(name="ocr.pipeline.recognize_page", acks_late=True, bind=True)
-def recognize_page_task(self, context: dict) -> dict:
+def recognize_page_task(self, request_id: str, page_index: int) -> dict:
     pipeline = get_pipeline_service()
-    state = StateManager(context["request_id"])
-    image = state.load_page_image(context["page_index"])
+    state = StateManager(request_id)
+    image = state.load_page_image(page_index)
     # Create page_id for debug output
-    page_id = f"page{context['page_index']}"
-    full_text, confidence = pipeline.recognize_page(image, context["line_boxes"], context["word_polygons"], page_id=page_id)
-    state.save_page_result(context["page_index"], full_text, confidence)
-    logger.debug("recognize_page.success", page=context["page_index"] + 1, confidence=confidence)
-    return {"page_index": context["page_index"]}
+    page_id = f"page{page_index}"
+    line_boxes = state.load_line_boxes(page_index)
+    word_polygons = state.load_word_polygons(page_index)
+    full_text, confidence = pipeline.recognize_page(image, line_boxes, word_polygons, page_id=page_id)
+    state.save_page_result(page_index, full_text, confidence)
+    logger.debug("recognize_page.success", page=page_index + 1, confidence=confidence)
+    return {"page_index": page_index}
 
 @app.task(name='app.worker.tasks.send_webhook_result', bind=True, autoretry_for=(RequestException,), retry_kwargs={"max_retries": 3, "countdown": 10})
 def send_webhook_result(self, webhook_url: str, payload: dict, **kwargs):
@@ -316,18 +319,35 @@ def process_ocr_task(
 
         state = StateManager(request_id)
         state.save_initial_images(images)
-        page_workflows = [chain(detect_lines_task.s(context={"request_id": request_id, "page_index": i}), detect_words_task.s(), recognize_page_task.s()) for i in range(len(images))]
 
-        if not page_workflows:
+        page_indices = list(range(len(images)))
+        if not page_indices:
             logger.warning("ocr_task.no_pages_found", guid=guid)
             return None
 
-        workflow = chord(
-            header=group(page_workflows),
-            body=finalize_and_notify_task.s(request_id=request_id, guid=guid, webhook_url=webhook_url)
+        line_stage = group(
+            detect_lines_task.si(request_id, page_index)
+            for page_index in page_indices
+        )
+
+        word_stage = group(
+            detect_words_task.si(request_id, page_index)
+            for page_index in page_indices
+        )
+
+        recognition_stage = group(
+            recognize_page_task.si(request_id, page_index)
+            for page_index in page_indices
+        )
+
+        workflow = chain(
+            line_stage,
+            word_stage,
+            recognition_stage,
+            finalize_and_notify_task.s(request_id=request_id, guid=guid, webhook_url=webhook_url)
         )
         async_result = workflow.apply_async(task_id=request_id, correlation_id=correlation_context)
-        logger.debug("ocr_task.workflow_dispatched", guid=guid, chord_task_id=async_result.id)
+        logger.debug("ocr_task.workflow_dispatched", guid=guid, workflow_task_id=async_result.id)
         return async_result.id
     except Exception as e:
         logger.exception("ocr_task.initialization_failed", guid=guid, error=str(e))
@@ -342,7 +362,26 @@ def finalize_and_notify_task(page_results: list, request_id: str, guid: str, web
     and returns it for the polling mechanism.
     """
     state = StateManager(request_id)
-    page_indices = [res['page_index'] for res in page_results]
+    page_indices: list[int] = []
+    if isinstance(page_results, (list, tuple)):
+        for res in page_results:
+            if isinstance(res, dict) and 'page_index' in res:
+                page_indices.append(int(res['page_index']))
+    else:
+        logger.warning(
+            "finalize.unexpected_page_results_type",
+            guid=guid,
+            result_type=type(page_results).__name__
+        )
+
+    if not page_indices:
+        try:
+            page_indices = state.load_page_indices()
+            logger.debug("finalize.page_indices_loaded_from_state", guid=guid, count=len(page_indices))
+        except KeyError:
+            logger.error("finalize.missing_page_indices", guid=guid)
+            page_indices = []
+
     all_pages = state.load_all_page_results(page_indices)
  
     # Join the text parts from all pages
