@@ -17,7 +17,7 @@ from paddleocr import TextDetection
 
 # --- Centralized imports from utility modules ---
 from app.utils.visualization import draw_polygons, draw_boxes
-from app.utils.image_processing import get_polygons_from_masks, merge_overlapping_masks
+from app.utils.image_processing import get_polygons_from_masks
 from app.utils.common import get_current_memory_usage_mb
 
 logger = structlog.get_logger(__name__)
@@ -131,7 +131,6 @@ class DetectionService:
             'word': {'path': config['debug_word_path'], 'draw_func': lambda im, res: draw_polygons(im, res, color=(255, 0, 0))},
             'line': {'path': config['debug_line_path'], 'draw_func': lambda im, res: draw_boxes(im, res, color=(0, 0, 255))}
         }
-        self.merging_iou = config['word_detect']['merging_iou']
         self.remove_nested_boxes = config['word_detect'].get('remove_nested', True)
 
         parallel_config = config['parallel_processing']
@@ -390,11 +389,11 @@ class DetectionService:
 
     @time_method
     def _post_process_word_results(self, word_result: Results) -> List[List[int]]:
-        """Post-processes word detection results including polygon merging.
+        """Post-processes word detection results.
         If segmentation masks are unavailable (e.g., using a bbox-only model),
         fall back to rectangle polygons derived from xyxy boxes.
         """
-        # Preferred path: segmentation masks -> polygons -> merge
+        # Preferred path: segmentation masks -> polygons
         try:
             if word_result.masks is not None:
                 logger.debug("detection_service.processing_masks",
@@ -402,25 +401,11 @@ class DetectionService:
                             has_data=hasattr(word_result.masks, 'data'))
 
                 polygons = get_polygons_from_masks(word_result.masks)
-                logger.debug("detection_service.word_polygons_before_merge",
-                            count=len(polygons),
-                            dice_threshold=self.merging_iou)
-                
+                logger.debug("detection_service.word_polygons_extracted",
+                            count=len(polygons))
+
                 if polygons:
-                    # Convert polygons back to numpy arrays for merging
-                    polygon_arrays = [np.array(poly).reshape(-1, 2) for poly in polygons]
-                    merged_polygons = merge_overlapping_masks(polygon_arrays, dice_threshold=self.merging_iou)
-                    logger.debug("detection_service.word_polygons_after_merge",
-                                count=len(merged_polygons))
-                    flattened = []
-                    for poly in merged_polygons:
-                        poly_arr = np.asarray(poly)
-                        if poly_arr.ndim == 2 and poly_arr.shape[1] == 2:
-                            flattened.append(poly_arr.reshape(-1).astype(int).tolist())
-                        else:
-                            logger.warning("detection_service.merge_output_unexpected_shape",
-                                           shape=getattr(poly_arr, "shape", None))
-                    return flattened
+                    return polygons
                 else:
                     logger.warning("detection_service.no_polygons_extracted_from_masks")
                     

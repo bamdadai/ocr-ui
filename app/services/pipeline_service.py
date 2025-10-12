@@ -16,7 +16,7 @@ from app.utils.image_processing import (
     rebase_polygon
 )
 from app.utils.text_processing import fix_mixed_text_order
-from app.utils.visualization import save_page_recognition_result, save_word_crops, save_word_polygons_on_page
+from app.utils.visualization import save_word_polygons_on_page
 
 logger = structlog.get_logger(__name__)
 
@@ -55,9 +55,6 @@ class PipelineService:
         # Store debug configuration for recognition
         recognition_config = config.get('recognition', {})
         self.recognition_debug = recognition_config.get('debug', False)
-        self.recognition_debug_path = Path(recognition_config.get('debug_recog_path', 'debug/recog'))
-        self.recognition_font_path = Path(recognition_config.get('debug_font_path', 'assets/fonts/XB Niloofar.ttf'))
-        self.word_crops_debug_path = Path(recognition_config.get('debug_word_crops_path', 'debug/word_crops'))
         self.word_polygons_debug_path = Path(recognition_config.get('debug_word_polygons_path', 'debug/word_polygons'))
 
         # Text rendering configuration for line grouping
@@ -138,12 +135,12 @@ class PipelineService:
         for line_idx, word_polygons in enumerate(word_polygons_per_line):
             if not word_polygons:
                 continue
-            
+
             line_crop = line_crops[line_idx]
             line_box = line_boxes[line_idx]
-            
+
             # Recognize the line and get word data
-            line_text, line_conf, word_data = self._recognize_line(line_crop, word_polygons)
+            line_text, line_conf, word_data = self._recognize_line(line_crop, word_polygons, line_box)
             text_of_lines.append((line_text, line_conf))
             
             # Convert word polygons to page-level coordinates for debug
@@ -162,42 +159,16 @@ class PipelineService:
         full_text = self._group_lines_by_height(text_of_lines, line_boxes)
         overall_conf = sum(conf for _, conf in text_of_lines) / len(text_of_lines) if text_of_lines else 0.0
         
-        # Save debug image with transcribed text if enabled
-        if self.recognition_debug and text_of_lines:
-            try:
-                save_page_recognition_result(
-                    image=image,
-                    line_boxes=line_boxes,
-                    text_of_lines=text_of_lines,
-                    save_dir=self.recognition_debug_path,
-                    font_path=self.recognition_font_path
-                )
-                logger.debug("pipeline_service.recognition_debug_saved", path=str(self.recognition_debug_path))
-            except Exception as e:
-                logger.warning("pipeline_service.recognition_debug_failed", error=str(e), exc_info=True)
-        
-        # Save word crops and word polygons visualization from full page
+        # Save word polygons visualization from full page
         if self.recognition_debug and all_page_word_data:
             try:
-                # Extract crops from full page using page-level coordinates
-                page_word_crops = []
-                page_word_texts = []
+                # Extract polygons and texts from full page using page-level coordinates
                 page_word_polygons = []
-                
+                page_word_texts = []
+
                 for word_info in all_page_word_data:
-                    crop = crop_word_from_polygon(image, word_info['polygon'])
-                    page_word_crops.append(crop)
-                    page_word_texts.append(word_info['text'])
                     page_word_polygons.append(word_info['polygon'])
-                
-                # Save individual word crops
-                save_word_crops(
-                    word_crops=page_word_crops,
-                    word_texts=page_word_texts,
-                    save_dir=self.word_crops_debug_path,
-                    page_id=page_id
-                )
-                logger.debug("pipeline_service.word_crops_debug_saved", count=len(page_word_crops), path=str(self.word_crops_debug_path))
+                    page_word_texts.append(word_info['text'])
 
                 # Save word polygons drawn on full page
                 save_word_polygons_on_page(
@@ -209,7 +180,7 @@ class PipelineService:
                 )
                 logger.debug("pipeline_service.word_polygons_on_page_saved", count=len(page_word_polygons), path=str(self.word_polygons_debug_path))
             except Exception as e:
-                logger.warning("pipeline_service.word_crops_debug_failed", error=str(e), exc_info=True)
+                logger.warning("pipeline_service.word_polygons_debug_failed", error=str(e), exc_info=True)
         
         return full_text, overall_conf
 
@@ -273,36 +244,81 @@ class PipelineService:
 
         return "\n".join(result_lines)
 
-    def _recognize_line(self, line_crop: np.ndarray, word_polygons: list) -> Tuple[str, float, List[dict]]:
+    def _recognize_line(self, line_crop: np.ndarray, word_polygons: list, line_box: list = None) -> Tuple[str, float, List[dict]]:
         """
-        Helper to recognize all words in a single line.
-        
+        Helper to recognize text in a single line using part-based recognition.
+
+        The line is split into horizontal parts based on word positions, and each part
+        is sent to the recognition model (instead of individual words).
+
+        Args:
+            line_crop: The cropped line image
+            word_polygons: List of word polygons in line-local coordinates
+            line_box: Line bounding box in page coordinates [x, y, w, h] (optional, for area filtering)
+
         Returns:
             Tuple of (line_text, line_confidence, word_data_list)
             word_data_list contains dicts with 'polygon', 'text', 'prob', 'box' for each word
         """
-        word_data = [
-            {
+        from app.utils.line_splitting import split_line_into_parts
+
+        # If line_box is not provided, create a dummy one based on line_crop dimensions
+        if line_box is None:
+            line_box = [0, 0, line_crop.shape[1], line_crop.shape[0]]
+
+        # Split line into parts
+        parts = split_line_into_parts(
+            line_crop=line_crop,
+            line_box=line_box,
+            word_polygons=word_polygons,
+            max_width_height_ratio=4.0,
+            max_words_per_part=4,
+            area_threshold=0.10
+        )
+
+        logger.debug(
+            "pipeline_service.line_split_into_parts",
+            num_parts=len(parts),
+            num_words=len(word_polygons)
+        )
+
+        # Recognize each part
+        part_crops = [part['crop'] for part in parts]
+        part_texts_with_probs = self.recognition_service(part_crops)  # type: ignore[misc]
+
+        # Combine part texts (right to left, already ordered by split_line_into_parts)
+        part_texts = []
+        part_probs = []
+
+        for i, (text, prob) in enumerate(part_texts_with_probs):
+            part_texts.append(text)
+            part_probs.append(prob)
+
+            logger.debug(
+                "pipeline_service.part_recognized",
+                part_index=i,
+                text=text,
+                confidence=prob,
+                word_count=parts[i]['word_count']
+            )
+
+        # Join parts with spaces (parts are already in RTL order)
+        text_line = " ".join(part_texts)
+        text_line = fix_mixed_text_order(text_line)
+
+        # Calculate average confidence
+        line_conf = sum(part_probs) / len(part_probs) if part_probs else 0.0
+
+        # Create word_data for backward compatibility (for debug visualization)
+        # We'll create synthetic word data based on word polygons but with part-level text
+        word_data = []
+        for poly in word_polygons:
+            word_data.append({
                 'crop': crop_word_from_polygon(line_crop, poly),
                 'box': make_box_from_poly(poly),
-                'polygon': poly  # Keep original polygon for coordinate conversion
-            }
-            for poly in word_polygons
-        ]
-        
-        all_word_crops = [item['crop'] for item in word_data]
-        # Recognition is ensured to be loaded by recognize_page
-        word_texts_with_probs = self.recognition_service(all_word_crops)  # type: ignore[misc]
+                'polygon': poly,
+                'text': '',  # We don't have individual word text anymore
+                'prob': line_conf  # Use line confidence as approximation
+            })
 
-        for i, item in enumerate(word_data):
-            item['text'], item['prob'] = word_texts_with_probs[i]
-
-        sorted_words = sorted(word_data, key=lambda x: x['box'][0], reverse=True)
-        
-        text_line = " ".join(item['text'] for item in sorted_words)
-        text_line = fix_mixed_text_order(text_line)
-        
-        line_probs = [item['prob'] for item in sorted_words]
-        line_conf = sum(line_probs) / len(line_probs) if line_probs else 0.0
-        
         return text_line, line_conf, word_data

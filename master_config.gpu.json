@@ -1,5 +1,5 @@
 {
-  "debug": false,
+  "debug": true,
   "logging": {
     "level": "DEBUG",
     "log_requests": true,
@@ -14,7 +14,6 @@
       "conf": 0.2,
       "iou": 0.3,
       "nms": true,
-      "merging_iou": 0.2,
       "remove_nested": true
     },
     "paddle_ocr": {
@@ -32,7 +31,7 @@
       "max_batch_size": 8,
       "memory_limit_mb": 8192
     },
-    "debug": false,
+    "debug": true,
     "debug_word_path": "debug/word_detections",
     "debug_line_path": "debug/line_detections"
   },
@@ -41,10 +40,10 @@
     "checkpoint": "weights/recognition_model.ckpt",
     "batch_size": 64,
     "min_conf": 0.7,
-    "debug": false
+    "debug": true
   },
   "pipeline": {
-    "debug": false,
+    "debug": true,
     "enable_recognition": true
   },
   "text_rendering": {

@@ -7,7 +7,6 @@
             "path": "weights/word_detection.pt",
             "conf": 0.2,
             "iou": 0.5,
-            "merging_iou": 0.5,
             "mask_dilation": 0,
             "batch": 8
         },
