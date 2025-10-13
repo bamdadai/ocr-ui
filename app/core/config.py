@@ -76,7 +76,7 @@ class Settings(BaseSettings):
     CELERY_BACKEND_URL: str = "redis://redis:6379/0"
     LOG_FILE_PATH: Path = PROJECT_ROOT / "logs/app.log"
     SEARCHABLE_PDF_FONT_PATH: Path = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-    ALLOW_INSECURE_WEBHOOKS: bool = False
+    ALLOW_INSECURE_WEBHOOKS: bool = True
 
     # Structural settings that are loaded from the JSON config file
     debug: bool

@@ -1,5 +1,6 @@
 import pickle
 from typing import List, Any
+import cv2
 import numpy as np
 from redis import Redis
 from app.core.config import settings
@@ -64,10 +65,9 @@ class StateManager:
         for index in existing_indices:
             self._delete_key(f"initial_image:{index}")
 
-        self._delete_key("initial_images")
-
         for index, image in enumerate(images):
-            self._set_data(f"initial_image:{index}", image)
+            payload = self._encode_page_image(image)
+            self._set_data(f"initial_image:{index}", payload)
 
         self._set_data("page_indices", list(range(len(images))))
 
@@ -77,7 +77,8 @@ class StateManager:
         legacy list-based storage if it still exists for older tasks.
         """
         try:
-            return self._get_data(f"initial_image:{page_index}")
+            stored_image = self._get_data(f"initial_image:{page_index}")
+            return self._decode_page_image(stored_image)
         except KeyError:
             images = self._get_data("initial_images")
             if page_index >= len(images):
@@ -119,3 +120,36 @@ class StateManager:
         for i in sorted(page_indices):
             results.append(self._get_data(f"page_result:{i}"))
         return results
+
+    def _encode_page_image(self, image: np.ndarray) -> Any:
+        """
+        Compress the image to PNG before storing it in Redis. This keeps payloads
+        small and consistent regardless of the original array size.
+        """
+        if not isinstance(image, np.ndarray):
+            raise TypeError("Expected a numpy.ndarray for image storage.")
+
+        success, encoded = cv2.imencode(".png", image)
+        if not success:
+            raise ValueError("Failed to encode image to PNG for Redis storage.")
+        return {"storage": "png", "data": encoded.tobytes()}
+
+    def _decode_page_image(self, payload: Any) -> np.ndarray:
+        """
+        Reconstructs the numpy image from the stored payload, handling both the
+        compressed and legacy raw-array formats.
+        """
+        if isinstance(payload, dict) and payload.get("storage") == "png":
+            encoded_bytes = payload.get("data", b"")
+            if not isinstance(encoded_bytes, (bytes, bytearray)):
+                raise TypeError("Invalid PNG payload stored in Redis.")
+            array = np.frombuffer(encoded_bytes, dtype=np.uint8)
+            image = cv2.imdecode(array, cv2.IMREAD_COLOR)
+            if image is None:
+                raise ValueError("Failed to decode PNG image retrieved from Redis.")
+            return image
+
+        if isinstance(payload, np.ndarray):
+            return payload
+
+        raise TypeError("Unsupported image payload type retrieved from Redis.")

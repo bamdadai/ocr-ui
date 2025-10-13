@@ -181,7 +181,7 @@ def send_webhook_result(self, webhook_url: str, payload: dict, **kwargs):
             webhook_url,
             json=payload,
             verify=not settings.ALLOW_INSECURE_WEBHOOKS,
-            timeout=10
+            timeout=60
         )
         response.raise_for_status()
 
