@@ -40,7 +40,8 @@ def split_line_into_parts(
     line_crop: np.ndarray,
     line_box: List[int],
     word_polygons: List[list],
-    max_width_height_ratio: float = 4.0
+    max_width_height_ratio: float = 4.0,
+    overlap_threshold: float = 0.1
 ) -> List[Dict]:
     """
     Split a line into horizontal parts for recognition.
@@ -51,12 +52,16 @@ def split_line_into_parts(
     - All words are included (no filtering)
     - Guarantees at least one part per line (even if empty or exceeds width constraint)
     - If only one part exists, it covers the entire line width
+    - When words overlap significantly, they stay together in the same part
 
     Args:
         line_crop: The cropped line image
         line_box: Line bounding box in page coordinates [x, y, w, h]
         word_polygons: List of word polygons in line-local coordinates
         max_width_height_ratio: Maximum width/height ratio for each part
+        overlap_threshold: Minimum overlap ratio (0.0-1.0) to consider words as overlapping.
+                          Overlap ratio = overlap_width / min(word1_width, word2_width)
+                          Default: 0.1 (10% overlap)
 
     Returns:
         List of part dictionaries, each containing:
@@ -102,9 +107,33 @@ def split_line_into_parts(
         word_x, word_y, word_w, word_h = word_bbox
         word_x_max = word_x + word_w
 
-        # Check if this word overlaps with current part's extent
+        # Check if this word overlaps significantly with current part's extent
         # Overlap occurs if word's right edge (x_max) is greater than current part's left edge (x_min)
-        has_overlap = current_words and word_x_max > current_x_min
+        has_significant_overlap = False
+        if current_words and word_x_max > current_x_min:
+            # Calculate overlap amount
+            overlap_width = word_x_max - current_x_min
+
+            # Get the last word in current part to calculate overlap ratio
+            last_word_in_part = current_words[-1]
+            last_word_width = last_word_in_part[2]
+
+            # Calculate overlap ratio relative to the smaller word
+            min_word_width = min(word_w, last_word_width)
+            overlap_ratio = overlap_width / min_word_width if min_word_width > 0 else 0
+
+            # Consider it significant overlap if it exceeds threshold
+            has_significant_overlap = overlap_ratio >= overlap_threshold
+
+            if has_significant_overlap:
+                logger.debug(
+                    "line_splitting.significant_overlap_detected",
+                    overlap_width=overlap_width,
+                    overlap_ratio=f"{overlap_ratio:.2f}",
+                    threshold=overlap_threshold,
+                    current_word_width=word_w,
+                    last_word_width=last_word_width
+                )
 
         # Calculate the extent if we add this word to current part
         potential_x_min = min(current_x_min, word_x)
@@ -115,16 +144,9 @@ def split_line_into_parts(
         would_exceed_width = potential_width > max_part_width
 
         if current_words and would_exceed_width:
-            if has_overlap:
-                # Word overlaps with current part but exceeds width limit
+            if has_significant_overlap:
+                # Word overlaps significantly with current part but exceeds width limit
                 # Solution: Include BOTH the overlapping word AND the last word from current part in new part
-                logger.debug(
-                    "line_splitting.overlap_detected",
-                    word_bbox=word_bbox,
-                    current_x_min=current_x_min,
-                    current_x_max=current_x_max,
-                    overlap_amount=word_x_max - current_x_min
-                )
 
                 # Finalize current part WITHOUT the last word
                 last_word = current_words.pop()

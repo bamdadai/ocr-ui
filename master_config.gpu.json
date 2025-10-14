@@ -50,6 +50,10 @@
     "same_row_separator": "\t",
     "height_tolerance_pixels": 5
   },
+  "line_splitting": {
+    "max_width_height_ratio": 4.0,
+    "overlap_threshold": 0.1
+  },
   "orientation": {
     "enabled": true,
     "path": "weights/rotation_classifier.pt",

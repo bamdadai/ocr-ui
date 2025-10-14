@@ -65,6 +65,11 @@ class PipelineService:
         self.same_row_separator: str = text_rendering_cfg.get('same_row_separator', '\t')
         self.height_tolerance_pixels: int = text_rendering_cfg.get('height_tolerance_pixels', 5)
 
+        # Line splitting configuration
+        line_splitting_cfg = config.get('line_splitting', {})
+        self.max_width_height_ratio: float = line_splitting_cfg.get('max_width_height_ratio', 4.0)
+        self.overlap_threshold: float = line_splitting_cfg.get('overlap_threshold', 0.1)
+
         # Orientation is now handled once at ingestion by tasks.process_ocr_task
         # Keep flags for logging/telemetry only
         orientation_cfg = (
@@ -352,7 +357,8 @@ class PipelineService:
             line_crop=line_crop,
             line_box=line_box,
             word_polygons=word_polygons,
-            max_width_height_ratio=4.0
+            max_width_height_ratio=self.max_width_height_ratio,
+            overlap_threshold=self.overlap_threshold
         )
         split_end_ns = perf_counter_ns()
 
