@@ -405,10 +405,10 @@ class DetectionService:
             raise
             
         duration = time.time() - start
-        if self.debug:
+        if self.debug and model_type == 'line':
             try:
                 fname = f"{model_type}_debug_{uuid.uuid4().hex[:8]}.jpg"
-                debug_path_str = str(self.debug_info[model_type]['path'])
+                debug_path_str = str(debug_path)
                 out_path = os.path.join(debug_path_str, fname)
                 logger.debug("detection_service.debug_saving", model_type=model_type, path=out_path)
                 os.makedirs(debug_path_str, exist_ok=True)

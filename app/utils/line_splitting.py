@@ -102,6 +102,10 @@ def split_line_into_parts(
         word_x, word_y, word_w, word_h = word_bbox
         word_x_max = word_x + word_w
 
+        # Check if this word overlaps with current part's extent
+        # Overlap occurs if word's right edge (x_max) is greater than current part's left edge (x_min)
+        has_overlap = current_words and word_x_max > current_x_min
+
         # Calculate the extent if we add this word to current part
         potential_x_min = min(current_x_min, word_x)
         potential_x_max = max(current_x_max, word_x_max)
@@ -111,34 +115,93 @@ def split_line_into_parts(
         would_exceed_width = potential_width > max_part_width
 
         if current_words and would_exceed_width:
-            # Finalize current part at word boundary
-            part_bbox = [
-                int(current_x_min),
-                0,
-                int(current_x_max - current_x_min),
-                line_height
-            ]
-            part_crop = extract_part_crop(line_crop, part_bbox)
+            if has_overlap:
+                # Word overlaps with current part but exceeds width limit
+                # Solution: Include BOTH the overlapping word AND the last word from current part in new part
+                logger.debug(
+                    "line_splitting.overlap_detected",
+                    word_bbox=word_bbox,
+                    current_x_min=current_x_min,
+                    current_x_max=current_x_max,
+                    overlap_amount=word_x_max - current_x_min
+                )
 
-            parts.append({
-                'crop': part_crop,
-                'bbox': part_bbox,
-                'word_count': len(current_words)
-            })
+                # Finalize current part WITHOUT the last word
+                last_word = current_words.pop()
 
-            logger.debug(
-                "line_splitting.part_created",
-                part_index=len(parts) - 1,
-                bbox=part_bbox,
-                word_count=len(current_words)
-            )
+                if current_words:  # Only create part if there are remaining words
+                    # Recalculate part extent without the last word
+                    remaining_x_coords = []
+                    for w in current_words:
+                        wx, wy, ww, wh = w
+                        remaining_x_coords.extend([wx, wx + ww])
 
-            # Start new part with current word
-            current_words = [word_bbox]
-            current_x_min = word_x
-            current_x_max = word_x_max
+                    part_x_min = int(min(remaining_x_coords))
+                    part_x_max = int(max(remaining_x_coords))
+
+                    part_bbox = [
+                        part_x_min,
+                        0,
+                        part_x_max - part_x_min,
+                        line_height
+                    ]
+                    part_crop = extract_part_crop(line_crop, part_bbox)
+
+                    parts.append({
+                        'crop': part_crop,
+                        'bbox': part_bbox,
+                        'word_count': len(current_words)
+                    })
+
+                    logger.debug(
+                        "line_splitting.part_created",
+                        part_index=len(parts) - 1,
+                        bbox=part_bbox,
+                        word_count=len(current_words)
+                    )
+
+                # Start new part with BOTH last word and current overlapping word
+                current_words = [last_word, word_bbox]
+                new_x_coords = [last_word[0], last_word[0] + last_word[2], word_x, word_x_max]
+                current_x_min = int(min(new_x_coords))
+                current_x_max = int(max(new_x_coords))
+
+                logger.debug(
+                    "line_splitting.new_part_with_overlap",
+                    word_count=2,
+                    new_x_min=current_x_min,
+                    new_x_max=current_x_max
+                )
+            else:
+                # No overlap - standard split at word boundary
+                # Finalize current part at word boundary
+                part_bbox = [
+                    int(current_x_min),
+                    0,
+                    int(current_x_max - current_x_min),
+                    line_height
+                ]
+                part_crop = extract_part_crop(line_crop, part_bbox)
+
+                parts.append({
+                    'crop': part_crop,
+                    'bbox': part_bbox,
+                    'word_count': len(current_words)
+                })
+
+                logger.debug(
+                    "line_splitting.part_created",
+                    part_index=len(parts) - 1,
+                    bbox=part_bbox,
+                    word_count=len(current_words)
+                )
+
+                # Start new part with current word
+                current_words = [word_bbox]
+                current_x_min = word_x
+                current_x_max = word_x_max
         else:
-            # Add word to current part
+            # Add word to current part (either no words yet, or fits within limit)
             current_words.append(word_bbox)
             current_x_min = potential_x_min
             current_x_max = potential_x_max
