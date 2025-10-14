@@ -58,7 +58,7 @@
     "enabled": true,
     "path": "weights/rotation_classifier.pt",
     "device": "cpu",
-    "imgsz": 224
+    "imgsz": 512
   },
   "valid_ocr_formats": [".jpeg", ".jpg", ".png", ".pdf"]
 }
