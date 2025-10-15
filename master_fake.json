@@ -48,5 +48,21 @@
         "same_row_separator": " ",
         "height_tolerance_pixels": 5
     },
+    "upload_storage": {
+        "chunk_size_bytes": 5242880,
+        "ttl_seconds": 7200,
+        "policies": [
+            {
+                "min_size_bytes": 209715200,
+                "chunk_size_bytes": 8388608,
+                "ttl_seconds": 1800
+            },
+            {
+                "min_size_bytes": 125829120,
+                "chunk_size_bytes": 6291456,
+                "ttl_seconds": 3600
+            }
+        ]
+    },
     "valid_ocr_formats": [".jpeg", ".jpg", ".png", ".pdf"]
 }

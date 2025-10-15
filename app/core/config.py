@@ -57,6 +57,26 @@ class PipelineConfig(BaseModel):
     # Allow nesting orientation config under pipeline as well (optional)
     orientation: Optional[OrientationConfig] = None
 
+class UploadPolicyConfig(BaseModel):
+    """Defines a size-based override for upload staging behaviour."""
+    min_size_bytes: int
+    chunk_size_bytes: int
+    ttl_seconds: int
+
+class UploadStorageConfig(BaseModel):
+    """Controls how large uploads are staged in Redis."""
+    chunk_size_bytes: int = 5 * 1024 * 1024
+    ttl_seconds: int = 7200
+    policies: List[UploadPolicyConfig] = []
+
+    @field_validator("policies")
+    @classmethod
+    def sort_policies(cls, v: List[UploadPolicyConfig]) -> List[UploadPolicyConfig]:
+        """Ensure policies are evaluated from the largest threshold downwards."""
+        if v:
+            return sorted(v, key=lambda policy: policy.min_size_bytes, reverse=True)
+        return v
+
 # --- Main Application Settings Class ---
 
 class Settings(BaseSettings):
@@ -86,6 +106,7 @@ class Settings(BaseSettings):
     text_rendering: TextRenderingConfig
     # Support top-level orientation configuration as well (optional)
     orientation: Optional[OrientationConfig] = None
+    upload_storage: UploadStorageConfig = UploadStorageConfig()
     valid_ocr_formats: List[str]
 
     @field_validator("detection", "recognition", "orientation", mode='before')
@@ -154,4 +175,3 @@ def setup_directories():
 
 # Run the function to create directories when the module is imported
 setup_directories()
-

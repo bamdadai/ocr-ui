@@ -306,11 +306,12 @@ def postprocess_ocr_text(text: str, custom_replacements: dict = None, replacemen
 @app.task(name='app.worker.tasks.process_ocr_task', acks_late=True, bind=True)
 def process_ocr_task(
     self,
-    file_content: bytes,
-    metadata: dict,
+    file_content: bytes | str | None = None,
+    metadata: dict | None = None,
     webhook_url: str | None = None,
     correlation_id: str | None = None,
     workflow_id: str | None = None,
+    staged_upload: bool = False,
 ):
     """
     The main entry point task. It dispatches the parallel OCR workflow
@@ -318,6 +319,9 @@ def process_ocr_task(
     """
     request_id = workflow_id or str(uuid.uuid4())
     correlation_context = correlation_id or request_id
+    metadata = dict(metadata or {})
+    state = StateManager(request_id)
+
     guid = metadata.get('guid', request_id)
 
     # Normalise and validate the declared file format against the allow-list.
@@ -341,25 +345,37 @@ def process_ocr_task(
     correlation_id_var.set(correlation_context)
     logger.debug("ocr_task.received", guid=guid, task_id=request_id, file_format=declared_format)
 
-    # Debug: Log the type and size of file_content
     logger.debug(
-        "ocr_task.file_content_debug",
+        "ocr_task.payload_mode",
         guid=guid,
-        content_type=type(file_content).__name__,
-        content_size=len(file_content) if hasattr(file_content, '__len__') else 'unknown'
+        staged_upload=staged_upload,
+        provided_type=type(file_content).__name__ if file_content is not None else None
     )
 
     try:
-        # Ensure file_content is bytes (handle Celery serialization quirks)
-        if isinstance(file_content, str):
-            # If it's a string, it's likely base64-encoded due to JSON serialization
-            logger.debug("ocr_task.decoding_base64_string", guid=guid)
-            file_bytes = base64.b64decode(file_content)
-        elif isinstance(file_content, bytes):
-            file_bytes = file_content
+        # Retrieve the original upload payload.
+        if staged_upload or file_content is None:
+            try:
+                file_bytes = state.load_upload_blob()
+            except KeyError as exc:
+                logger.error("ocr_task.staged_payload_missing", guid=guid)
+                raise ValueError("Staged upload payload missing for request.") from exc
+            logger.debug(
+                "ocr_task.staged_payload_loaded",
+                guid=guid,
+                payload_size=len(file_bytes),
+            )
         else:
-            logger.error("ocr_task.unexpected_type", guid=guid, type=type(file_content).__name__)
-            raise ValueError(f"Unexpected file_content type: {type(file_content).__name__}")
+            # Ensure file_content is bytes (handle Celery serialization quirks)
+            if isinstance(file_content, str):
+                # If it's a string, it's likely base64-encoded due to JSON serialization
+                logger.debug("ocr_task.decoding_base64_string", guid=guid)
+                file_bytes = base64.b64decode(file_content)
+            elif isinstance(file_content, bytes):
+                file_bytes = file_content
+            else:
+                logger.error("ocr_task.unexpected_type", guid=guid, type=type(file_content).__name__)
+                raise ValueError(f"Unexpected file_content type: {type(file_content).__name__}")
 
         is_pdf = declared_format == ".pdf"
 
@@ -376,6 +392,7 @@ def process_ocr_task(
                 )
                 raise ValueError("Failed to decode file as an image. The file may be corrupt or in an unsupported format.")
             images = [decoded_image]
+        del file_bytes
 
         # NEW: Rotate images upright ONCE at the ingestion stage, so all downstream coordinates match
         orientation_start_ns = perf_counter_ns()
@@ -390,8 +407,9 @@ def process_ocr_task(
             extra={"page_count": len(images)}
         )
 
-        state = StateManager(request_id)
         state.save_initial_images(images)
+        if staged_upload:
+            state.clear_upload_blob(ignore_missing=True)
 
         page_indices = list(range(len(images)))
         if not page_indices:
@@ -427,6 +445,16 @@ def process_ocr_task(
         # This makes the task fail, so the frontend polling will receive a 'FAILURE' status.
         self.update_state(state='FAILURE', meta={'error': str(e)})
         raise
+    finally:
+        if staged_upload:
+            try:
+                state.clear_upload_blob(ignore_missing=True)
+            except Exception as cleanup_exc:  # pragma: no cover - best effort cleanup
+                logger.warning(
+                    "ocr_task.staged_payload_cleanup_failed",
+                    guid=guid,
+                    error=str(cleanup_exc)
+                )
 
 @app.task(name="ocr.pipeline.finalize_and_notify", acks_late=True)
 def finalize_and_notify_task(page_results: list, request_id: str, guid: str, webhook_url: str | None = None):

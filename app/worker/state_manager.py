@@ -1,6 +1,10 @@
 import pickle
 from typing import List, Any
-import cv2
+import structlog
+try:
+    import cv2  # type: ignore
+except ImportError:  # pragma: no cover - API containers may not ship OpenCV
+    cv2 = None
 import numpy as np
 from redis import Redis
 from app.core.config import settings
@@ -8,6 +12,12 @@ from app.core.config import settings
 # A Redis client instance can be shared.
 # It manages its own connection pool internally.
 redis_client = Redis.from_url(settings.CELERY_BACKEND_URL)
+logger = structlog.get_logger(__name__)
+
+
+UPLOAD_META_KEY = "upload_blob_meta"
+UPLOAD_CHUNK_PREFIX = "upload_blob_chunk"
+
 
 class StateManager:
     """
@@ -25,17 +35,19 @@ class StateManager:
         if not request_id:
             raise ValueError("request_id cannot be empty.")
         self.request_id = request_id
-        # Set a default TTL (Time-To-Live) of 2 hours for all keys related to this request.
-        self.ttl_seconds = 7200
+        self.upload_config = settings.upload_storage
+        # Set a default TTL (Time-To-Live) of 2 hours for all keys related to this request (configurable).
+        self.ttl_seconds = self.upload_config.ttl_seconds
 
     def _get_key(self, key: str) -> str:
         """Constructs a unique, namespaced Redis key for the current request."""
         return f"ocr_state:{self.request_id}:{key}"
 
-    def _set_data(self, key: str, data: Any):
+    def _set_data(self, key: str, data: Any, ttl_override: int | None = None):
         """Serializes data using pickle and stores it in Redis with a timeout."""
         redis_key = self._get_key(key)
-        redis_client.set(redis_key, pickle.dumps(data), ex=self.ttl_seconds)
+        ttl_seconds = ttl_override if ttl_override is not None else self.ttl_seconds
+        redis_client.set(redis_key, pickle.dumps(data), ex=ttl_seconds)
 
     def _delete_key(self, key: str):
         """Removes a Redis key if it exists."""
@@ -121,6 +133,122 @@ class StateManager:
             results.append(self._get_data(f"page_result:{i}"))
         return results
 
+    def save_upload_blob(self, payload: bytes | bytearray, chunk_size: int | None = None) -> dict:
+        """
+        Persists a raw upload payload in Redis using chunked storage to avoid large single-key writes.
+
+        Returns a metadata dictionary describing the stored payload. The metadata is stored alongside the payload
+        so workers can reconstruct the original bytes.
+        """
+        if not isinstance(payload, (bytes, bytearray)):
+            raise TypeError("Expected raw bytes for upload storage.")
+        base_chunk_size = chunk_size or self.upload_config.chunk_size_bytes
+        if base_chunk_size <= 0:
+            raise ValueError("Chunk size must be greater than zero.")
+
+        total_size = len(payload)
+        chunk_count = 0
+        size_mb = total_size / (1024 * 1024)
+
+        dynamic_chunk_size = base_chunk_size
+        dynamic_ttl = self.ttl_seconds
+
+        for policy in self.upload_config.policies:
+            if total_size >= policy.min_size_bytes:
+                dynamic_chunk_size = max(dynamic_chunk_size, policy.chunk_size_bytes)
+                dynamic_ttl = min(dynamic_ttl, policy.ttl_seconds)
+                break
+
+        # Clear any existing staged upload prior to writing new data.
+        self.clear_upload_blob(ignore_missing=True)
+
+        for start in range(0, total_size, dynamic_chunk_size):
+            end = start + dynamic_chunk_size
+            chunk = bytes(payload[start:end])
+            self._set_data(f"{UPLOAD_CHUNK_PREFIX}:{chunk_count}", chunk, ttl_override=dynamic_ttl)
+            chunk_count += 1
+
+        metadata = {
+            "size": total_size,
+            "chunks": chunk_count,
+            "chunk_size": dynamic_chunk_size,
+            "ttl": dynamic_ttl,
+            "size_mb": round(size_mb, 2),
+        }
+        self._set_data(UPLOAD_META_KEY, metadata, ttl_override=dynamic_ttl)
+
+        logger.info(
+            "state.upload_storage.staged",
+            request_id=self.request_id,
+            total_size=total_size,
+            size_mb=metadata["size_mb"],
+            chunk_count=chunk_count,
+            chunk_size=dynamic_chunk_size,
+            ttl_seconds=dynamic_ttl,
+        )
+
+        if dynamic_chunk_size != base_chunk_size or dynamic_ttl != self.ttl_seconds:
+            logger.warning(
+                "state.upload_storage.policy_adjusted",
+                request_id=self.request_id,
+                base_chunk_size=base_chunk_size,
+                applied_chunk_size=dynamic_chunk_size,
+                base_ttl=self.ttl_seconds,
+                applied_ttl=dynamic_ttl,
+                total_size=total_size,
+            )
+
+        return metadata
+
+    def load_upload_blob(self) -> bytes:
+        """
+        Reassembles the staged upload payload from chunked Redis storage.
+        Raises KeyError if the payload metadata is missing.
+        """
+        metadata = self._get_data(UPLOAD_META_KEY)
+        chunk_count = int(metadata.get("chunks", 0))
+        logger.debug(
+            "state.upload_storage.load",
+            request_id=self.request_id,
+            chunk_count=chunk_count,
+            total_size=metadata.get("size"),
+            chunk_size=metadata.get("chunk_size"),
+            ttl_seconds=metadata.get("ttl"),
+        )
+
+        if chunk_count == 0:
+            return b""
+
+        chunks: list[bytes] = []
+        for index in range(chunk_count):
+            chunk = self._get_data(f"{UPLOAD_CHUNK_PREFIX}:{index}")
+            if not isinstance(chunk, (bytes, bytearray)):
+                raise TypeError("Unexpected chunk type retrieved from Redis.")
+            chunks.append(bytes(chunk))
+        return b"".join(chunks)
+
+    def clear_upload_blob(self, ignore_missing: bool = False):
+        """
+        Removes any staged upload payload (metadata and chunks) from Redis.
+        """
+        try:
+            metadata = self._get_data(UPLOAD_META_KEY)
+        except KeyError:
+            if ignore_missing:
+                return
+            raise
+
+        chunk_count = int(metadata.get("chunks", 0))
+        for index in range(chunk_count):
+            self._delete_key(f"{UPLOAD_CHUNK_PREFIX}:{index}")
+        self._delete_key(UPLOAD_META_KEY)
+        logger.debug(
+            "state.upload_storage.cleared",
+            request_id=self.request_id,
+            removed_chunks=chunk_count,
+            total_size=metadata.get("size"),
+        )
+
     def _encode_page_image(self, image: np.ndarray) -> Any:
         """
         Compress the image to PNG before storing it in Redis. This keeps payloads
@@ -128,6 +256,9 @@ class StateManager:
         """
         if not isinstance(image, np.ndarray):
             raise TypeError("Expected a numpy.ndarray for image storage.")
+
+        if cv2 is None:
+            raise RuntimeError("OpenCV is required to encode page images but is not available.")
 
         success, encoded = cv2.imencode(".png", image)
         if not success:
@@ -139,6 +270,9 @@ class StateManager:
         Reconstructs the numpy image from the stored payload, handling both the
         compressed and legacy raw-array formats.
         """
+        if cv2 is None:
+            raise RuntimeError("OpenCV is required to decode stored page images but is not available.")
+
         if isinstance(payload, dict) and payload.get("storage") == "png":
             encoded_bytes = payload.get("data", b"")
             if not isinstance(encoded_bytes, (bytes, bytearray)):

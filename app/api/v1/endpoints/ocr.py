@@ -11,6 +11,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from app.core.logging import correlation_id_var
 from app.worker.celery_app import app as celery_app
+from app.worker.state_manager import StateManager
 from app.schemas.ocr import (
     TaskQueueItem,
     TaskStatusResponse,
@@ -99,6 +100,10 @@ async def create_ocr_task(
             continue
 
         try:
+            task_name = "app.worker.tasks.process_ocr_task"
+            workflow_task_id = str(uuid.uuid4())
+            state = StateManager(workflow_task_id)
+
             file_bytes = await upload_file.read()
             full_metadata = {
                 **normalized_metadata,
@@ -106,8 +111,11 @@ async def create_ocr_task(
                 "filename": upload_file.filename,
             }
 
-            task_name = "app.worker.tasks.process_ocr_task"
-            workflow_task_id = str(uuid.uuid4())
+            original_size = len(file_bytes)
+            staged_metadata = state.save_upload_blob(file_bytes)
+            staged_size = staged_metadata.get("size", original_size)
+            staged_chunks = staged_metadata.get("chunks", 0)
+            del file_bytes
 
             logger.info(
                 "ocr.task.dispatching",
@@ -116,17 +124,19 @@ async def create_ocr_task(
                 filename=upload_file.filename,
                 file_format=metadata_format,
                 webhook_url=normalized_webhook if use_webhook else None,
-                use_webhook=use_webhook
+                use_webhook=use_webhook,
+                staged_upload_size=staged_size,
+                staged_upload_chunks=staged_chunks,
             )
 
             async_result = celery_app.send_task(
                 name=task_name,
                 kwargs={
-                    "file_content": file_bytes,
                     "metadata": full_metadata,
                     "webhook_url": normalized_webhook if use_webhook else None,
                     "correlation_id": correlation_id,
                     "workflow_id": workflow_task_id,
+                    "staged_upload": True,
                 },
             )
 

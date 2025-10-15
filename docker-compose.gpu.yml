@@ -109,7 +109,7 @@ services:
     container_name: ocr_worker_dispatch
     restart: unless-stopped
     working_dir: /app
-    command: python -m celery -A app.worker.celery_app worker -l info -Q dispatch -c 4
+    command: python -m celery -A app.worker.celery_app worker -l info -Q dispatch -c 1 --prefetch-multiplier=1 --max-tasks-per-child=1
     env_file: .env
     environment:
       - PYTHONPATH=/app
@@ -117,9 +117,6 @@ services:
       - ./weights:/app/weights:ro
       - ./debug:/app/debug
       - ./logs:/app/logs
-    deploy:
-      resources:
-        limits: { cpus: '1.0', memory: 4G }
     depends_on: [redis, rabbitmq]
     networks:
       - ocr_network
@@ -142,9 +139,6 @@ services:
     volumes:
       - ./weights:/app/weights:ro
       - ./logs:/app/logs
-    deploy:
-      resources:
-        limits: { cpus: '1.0', memory: 2G }
     depends_on: [redis, rabbitmq]
     networks:
       - ocr_network
