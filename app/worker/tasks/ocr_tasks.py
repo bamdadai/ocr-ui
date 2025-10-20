@@ -485,8 +485,16 @@ def finalize_and_notify_task(page_results: list, request_id: str, guid: str, web
 
     all_pages = state.load_all_page_results(page_indices)
  
-    # Join the text parts from all pages
-    original_text = "\n\nصفحه\n\n".join([p['text'] for p in all_pages])
+    # Join the text parts from all pages, inserting a page marker between pages
+    # Example between page 1 and 2: "##صفحه 2##"
+    parts: list[str] = []
+    for i, p in enumerate(all_pages):
+        if i > 0:
+            # Use stored page_index when available; it is 0-based in state
+            page_number = int(p.get("page_index", i)) + 1
+            parts.append(f"##صفحه {page_number}##")
+        parts.append(p["text"])
+    original_text = "\n\n".join(parts)
 
     # --- FINAL ENCODING FIX ---
     # This standard pattern corrects text that was decoded incorrectly as Latin-1
