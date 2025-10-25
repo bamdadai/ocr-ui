@@ -39,10 +39,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.gpu
-      pull: false
       args:
         REQ_FILE: requirements/api.txt
-    pull_policy: never
     container_name: ocr_api
     restart: unless-stopped
     working_dir: /app
@@ -69,10 +67,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.gpu
-      pull: false
       args:
         REQ_FILE: requirements/worker-gpu.txt
-    pull_policy: never
     container_name: ocr_worker_pipeline
     restart: unless-stopped
     working_dir: /app
@@ -102,12 +98,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.gpu
-      pull: false
       args:
         REQ_FILE: requirements/worker-gpu.txt
-    pull_policy: never
     container_name: ocr_worker_dispatch
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     working_dir: /app
     command: python -m celery -A app.worker.celery_app worker -l info -Q dispatch -c 1 --prefetch-multiplier=1 --max-tasks-per-child=1
     env_file: .env
@@ -125,10 +121,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.gpu
-      pull: false
       args:
         REQ_FILE: requirements/worker-gpu.txt
-    pull_policy: never
     container_name: ocr_worker_webhooks
     restart: unless-stopped
     working_dir: /app
@@ -140,6 +134,8 @@ services:
       - ./weights:/app/weights:ro
       - ./logs:/app/logs
     depends_on: [redis, rabbitmq]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - ocr_network
 
