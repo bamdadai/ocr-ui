@@ -38,7 +38,7 @@ SAVE_TO_DISK = True
 RESULTS_DIR = Path(__file__).parent.parent / "webhook_results"
 
 
-@app.route('/webhook/ocr', methods=['POST'])
+@app.route('/callbacks/ocr', methods=['POST'])
 def receive_ocr_result():
     """
     Endpoint to receive OCR results from the OCR service.
