@@ -243,6 +243,11 @@ class PipelineService:
         )
         overall_conf = sum(conf for _, conf in text_of_lines) / len(text_of_lines) if text_of_lines else 0.0
         
+        # GPU memory cleanup after processing all lines
+        if hasattr(self.recognition_service, 'device') and 'cuda' in self.recognition_service.device:
+            import torch
+            torch.cuda.empty_cache()
+        
         # Save word polygons visualization from full page
         if self.recognition_debug and all_page_word_data:
             try:

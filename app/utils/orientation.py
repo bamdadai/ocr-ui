@@ -2,6 +2,7 @@
 from __future__ import annotations
 from typing import List, Optional
 import re
+import threading
 import cv2
 import numpy as np
 import structlog
@@ -88,7 +89,20 @@ class _OrientationCorrector:
             return True
         try:
             self._model = YOLO(self.model_path)
-            logger.info("orientation.model_loaded", path=self.model_path, device=self.device)
+            
+            # Warmup: force model to fully load by running a dummy prediction
+            logger.info("orientation.warmup_start")
+            try:
+                dummy = np.zeros((self.imgsz, self.imgsz, 3), dtype=np.uint8)
+                _ = self._model.predict(source=[dummy], imgsz=self.imgsz, 
+                                       device=self.device, verbose=False)
+                logger.info("orientation.model_loaded_and_warmed", 
+                           path=self.model_path, device=self.device)
+            except Exception as warmup_error:
+                logger.warning("orientation.warmup_failed", error=str(warmup_error))
+                # Still mark as loaded even if warmup fails
+                logger.info("orientation.model_loaded", path=self.model_path, device=self.device)
+            
             return True
         except Exception as e:
             logger.error("orientation.model_load_failed", error=str(e), exc_info=True)
@@ -127,11 +141,21 @@ class _OrientationCorrector:
 
 
 _singleton: Optional[_OrientationCorrector] = None
+_singleton_lock = threading.Lock()
 
 
 def correct_images(images: List[np.ndarray]) -> List[np.ndarray]:
-    """Public API: rotate images upright once based on orientation model (if enabled)."""
+    """
+    Public API: rotate images upright once based on orientation model (if enabled).
+    Thread-safe singleton initialization using double-check locking pattern.
+    """
     global _singleton
+    
+    # First check (without lock) for performance
     if _singleton is None:
-        _singleton = _OrientationCorrector()
+        with _singleton_lock:
+            # Second check (with lock) to prevent race condition
+            if _singleton is None:
+                _singleton = _OrientationCorrector()
+    
     return _singleton.correct_images(images)

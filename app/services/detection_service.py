@@ -166,7 +166,20 @@ class DetectionService:
                 logger.warning("detection_service.yolo_model_structure_unexpected", 
                               model_path=model_path)
             
-            return model.to(self.device)
+            model = model.to(self.device)
+            
+            # Warmup: force model to fully load by running a dummy prediction
+            logger.debug("detection_service.yolo_warmup_start", model_path=model_path)
+            try:
+                dummy_img = np.zeros((640, 640, 3), dtype=np.uint8)
+                _ = model(dummy_img, verbose=False)
+                logger.debug("detection_service.yolo_warmup_complete", model_path=model_path)
+            except Exception as warmup_error:
+                logger.warning("detection_service.yolo_warmup_failed", 
+                             model_path=model_path, 
+                             error=str(warmup_error))
+            
+            return model
             
         except Exception as e:
             logger.error("detection_service.yolo_model_load_failed", 
@@ -188,7 +201,14 @@ class DetectionService:
     @time_method
     def predict_word_polygons(self, images: List[np.ndarray]) -> Dict[str, List]:
         logger.debug("detection_service.predicting", model_type="word", image_count=len(images))
-        return {'word_polygons': self._predict(images, model_type='word')}
+        results = {'word_polygons': self._predict(images, model_type='word')}
+        
+        # GPU memory cleanup after prediction
+        if 'cuda' in self.device:
+            import torch
+            torch.cuda.empty_cache()
+        
+        return results
 
     @time_method
     def predict_line_boxes(self, images: List[np.ndarray]) -> Dict[str, List]:
@@ -196,6 +216,12 @@ class DetectionService:
         # Use PaddleOCR for line detection
         processor_function = lambda img: self._predict_lines_paddle(img)
         results = self._process_in_optimal_batches(images, processor_function)
+        
+        # GPU memory cleanup after prediction
+        if 'cuda' in self.device:
+            import torch
+            torch.cuda.empty_cache()
+        
         return {'line_boxes': results}
 
     @time_method

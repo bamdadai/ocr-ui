@@ -29,6 +29,23 @@ class RecognitionService:
         logger.debug("recognition_service.loading_model", checkpoint=config['checkpoint'])
         self.parseq = load_from_checkpoint(str(config['checkpoint'])).eval().to(self.device)
         self.img_transform = SceneTextDataModule.get_transform(self.parseq.hparams.img_size)
+        
+        # Warmup: force model to fully load by running a dummy prediction
+        logger.debug("recognition_service.warmup_start")
+        try:
+            dummy_input = torch.zeros(
+                (1, 3, self.parseq.hparams.img_size[0], self.parseq.hparams.img_size[1]),
+                device=self.device
+            )
+            with torch.no_grad():
+                _ = self.parseq(dummy_input)
+            del dummy_input
+            if 'cuda' in self.device:
+                torch.cuda.empty_cache()
+            logger.debug("recognition_service.warmup_complete")
+        except Exception as e:
+            logger.warning("recognition_service.warmup_failed", error=str(e))
+        
         logger.debug("recognition_service.initialized")
 
     def preprocess(self, img: np.ndarray) -> torch.Tensor:
@@ -62,7 +79,7 @@ class RecognitionService:
                     batch_size=len(batch)
                 )
                 
-                inputs = torch.stack(batch, dim=0).to(self.device)
+                inputs = torch.stack(batch, dim=0).to(self.device, non_blocking=True)
                 logits = self.parseq(inputs)
                 pred = logits.softmax(-1)
                 labels, confidences = self.parseq.tokenizer.decode(pred)
@@ -89,5 +106,12 @@ class RecognitionService:
 
                 all_labels.extend(labels)
                 all_confidences.extend(processed_confidences)
+                
+                # GPU memory cleanup after each batch
+                del inputs, logits, pred
+        
+        # Final GPU cache cleanup after all batches
+        if 'cuda' in self.device:
+            torch.cuda.empty_cache()
         
         return list(zip(all_labels, all_confidences))

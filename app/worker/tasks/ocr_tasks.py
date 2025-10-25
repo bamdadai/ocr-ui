@@ -7,6 +7,7 @@ import numpy as np
 import requests
 import structlog
 import re
+import threading
 from time import perf_counter_ns
 from pathlib import Path
 from celery import chain, group
@@ -29,39 +30,50 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger(__name__)
 
-# --- Lazy Loading and Micro-tasks (These remain unchanged) ---
+# --- Lazy Loading and Micro-tasks (Thread-safe singleton pattern) ---
 
 pipeline_singleton: 'PipelineService | None' = None
+_pipeline_lock = threading.Lock()
 ALLOWED_FILE_EXTENSIONS = {".jpeg", ".png", ".pdf", ".jpg", ".tif", ".tiff"}
 
 def get_pipeline_service() -> 'PipelineService':
+    """
+    Thread-safe lazy initialization of PipelineService singleton.
+    Uses double-check locking pattern to minimize lock contention.
+    """
     global pipeline_singleton
+    
+    # First check (without lock) for performance
     if pipeline_singleton is None:
-        logger.debug("lazy_loading.pipeline_service.initializing")
-        try:
-            # Prefer absolute import first
-            from app.services.pipeline_service import PipelineService  # type: ignore
-            logger.debug("lazy_loading.pipeline_service.import_ok", origin=str(PipelineService.__module__))
-        except (ModuleNotFoundError, ImportError) as e_abs:
-            # Fallback to package-relative import in case of sys.path/module shadowing issues OR name import errors
-            logger.warning(
-                "lazy_loading.pipeline_service.abs_import_failed",
-                error=str(e_abs), sys_path=list(sys.path)
-            )
-            try:
-                from ...services.pipeline_service import PipelineService  # type: ignore
-                logger.debug("lazy_loading.pipeline_service.import_ok", origin=str(PipelineService.__module__))
-            except Exception as e_rel:
-                logger.critical(
-                    "lazy_loading.pipeline_service.failed",
-                    error=str(e_rel), sys_path=list(sys.path), exc_info=True
-                )
-                raise
-        except Exception as e:
-            logger.critical("lazy_loading.pipeline_service.failed", error=str(e), sys_path=list(sys.path), exc_info=True)
-            raise
-        pipeline_singleton = PipelineService(settings.model_dump())
-        logger.debug("lazy_loading.pipeline_service.success")
+        with _pipeline_lock:
+            # Second check (with lock) to prevent race condition
+            if pipeline_singleton is None:
+                logger.debug("lazy_loading.pipeline_service.initializing")
+                try:
+                    # Prefer absolute import first
+                    from app.services.pipeline_service import PipelineService  # type: ignore
+                    logger.debug("lazy_loading.pipeline_service.import_ok", origin=str(PipelineService.__module__))
+                except (ModuleNotFoundError, ImportError) as e_abs:
+                    # Fallback to package-relative import in case of sys.path/module shadowing issues OR name import errors
+                    logger.warning(
+                        "lazy_loading.pipeline_service.abs_import_failed",
+                        error=str(e_abs), sys_path=list(sys.path)
+                    )
+                    try:
+                        from ...services.pipeline_service import PipelineService  # type: ignore
+                        logger.debug("lazy_loading.pipeline_service.import_ok", origin=str(PipelineService.__module__))
+                    except Exception as e_rel:
+                        logger.critical(
+                            "lazy_loading.pipeline_service.failed",
+                            error=str(e_rel), sys_path=list(sys.path), exc_info=True
+                        )
+                        raise
+                except Exception as e:
+                    logger.critical("lazy_loading.pipeline_service.failed", error=str(e), sys_path=list(sys.path), exc_info=True)
+                    raise
+                pipeline_singleton = PipelineService(settings.model_dump())
+                logger.debug("lazy_loading.pipeline_service.success")
+    
     return pipeline_singleton
 
 @app.task(name="ocr.pipeline.detect_lines", acks_late=True, bind=True)
