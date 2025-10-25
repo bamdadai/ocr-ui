@@ -1,0 +1,75 @@
+# ====================================================================
+# GPU-Enabled Worker Dockerfile (CUDA 12.6 + cuDNN)
+# ====================================================================
+# This image contains all ML libraries and GPU support for OCR workers
+# Expected size: ~11-12GB (due to PyTorch, CUDA, PaddlePaddle, etc.)
+# ====================================================================
+
+FROM nvidia/cuda:12.6.0-cudnn-runtime-ubuntu22.04
+
+ARG REQ_FILE=requirements/worker-gpu.txt
+
+# System dependencies for ML inference
+# Remove NVIDIA apt repos (can be blocked or cause 403 in some environments)
+RUN rm -f /etc/apt/sources.list.d/cuda* /etc/apt/sources.list.d/nvidia* || true \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-venv \
+    python3-pip \
+    # Image processing dependencies
+    poppler-utils \
+    libgl1-mesa-dev \
+    libglib2.0-0 \
+    fonts-dejavu-core \
+    ffmpeg \
+    libsm6 \
+    libxext6 \
+    libxrender1 \
+    libgomp1 \
+    # Debugging tools
+    iputils-ping \
+    curl \
+    htop \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Create Python venv and install dependencies
+ENV VIRTUAL_ENV=/opt/venv
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+WORKDIR /opt
+
+RUN python3 -m venv "$VIRTUAL_ENV" \
+    && . "$VIRTUAL_ENV/bin/activate" \
+    && pip install --no-cache-dir --upgrade pip
+
+# Install GPU-enabled ML libraries
+# PyTorch with CUDA 12.6 support (~6GB)
+RUN . "$VIRTUAL_ENV/bin/activate" \
+    && pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cu126
+
+# PaddlePaddle GPU version (~1GB) - Fix: use GPU version not CPU
+RUN . "$VIRTUAL_ENV/bin/activate" \
+    && python -m pip install paddlepaddle-gpu==3.2.0 -i https://www.paddlepaddle.org.cn/packages/stable/cu126/
+
+# Install worker requirements and PaddleOCR
+COPY requirements/ ./requirements/
+RUN . "$VIRTUAL_ENV/bin/activate" \
+    && pip install --no-cache-dir --timeout=600 -r ${REQ_FILE} \
+    && pip install --no-cache-dir paddleocr==3.2.0 \
+    && pip cache purge
+
+# Copy application code and models
+WORKDIR /app
+COPY app/ ./app/
+COPY static/ ./static/
+COPY templates/ ./templates/
+COPY master_config.gpu.json ./master_config.json
+
+# Note: weights directory is mounted at runtime via docker-compose volumes
+
+# Environment configuration
+ENV PYTHONPATH=/app
+
+# Default command (overridden by docker-compose)
+CMD ["python", "-m", "celery", "-A", "app.worker.celery_app", "worker", "-l", "info"]
+

@@ -38,9 +38,10 @@ services:
   api:
     build:
       context: .
-      dockerfile: Dockerfile.gpu
+      dockerfile: Dockerfile.api
       args:
         REQ_FILE: requirements/api.txt
+        CONFIG_FILE: master_config.gpu.json
     container_name: ocr_api
     restart: unless-stopped
     working_dir: /app
@@ -51,7 +52,6 @@ services:
     environment:
       - PYTHONPATH=/app
     volumes:
-      - ./weights:/app/weights:ro
       - ./logs:/app/logs
     depends_on:
       redis: { condition: service_healthy }
@@ -60,13 +60,13 @@ services:
       - ocr_network
 
   # ===================================
-  # Unified Celery Worker
+  # GPU-Enabled Celery Worker
   # ===================================
 
   worker:
     build:
       context: .
-      dockerfile: Dockerfile.gpu
+      dockerfile: Dockerfile.worker-gpu
       args:
         REQ_FILE: requirements/worker-gpu.txt
     container_name: ocr_worker

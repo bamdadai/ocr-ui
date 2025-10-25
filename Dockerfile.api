@@ -1,0 +1,52 @@
+# ====================================================================
+# Lightweight API-Only Dockerfile (No ML libraries, No GPU)
+# ====================================================================
+# This image is optimized for the API service which only routes requests
+# and doesn't perform any ML inference. Expected size: ~500MB
+# ====================================================================
+
+FROM python:3.12-slim
+
+ARG REQ_FILE=requirements/api.txt
+ARG CONFIG_FILE=master_config.gpu.json
+
+# System dependencies (minimal for API service)
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+    # Essential libraries
+    libglib2.0-0 \
+    # Debugging tools
+    iputils-ping \
+    curl \
+    htop \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Create Python venv and install dependencies
+ENV VIRTUAL_ENV=/opt/venv
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+WORKDIR /opt
+
+RUN python3 -m venv "$VIRTUAL_ENV" \
+    && . "$VIRTUAL_ENV/bin/activate" \
+    && pip install --no-cache-dir --upgrade pip
+
+# Copy and install API requirements only (no ML libraries)
+COPY requirements/ ./requirements/
+RUN . "$VIRTUAL_ENV/bin/activate" \
+    && pip install --no-cache-dir --timeout=600 -r ${REQ_FILE} \
+    && pip cache purge
+
+# Copy application code
+WORKDIR /app
+COPY app/ ./app/
+COPY static/ ./static/
+COPY templates/ ./templates/
+COPY ${CONFIG_FILE} ./master_config.json
+
+# Environment configuration
+ENV PYTHONPATH=/app
+EXPOSE 8084
+
+# Start API server
+CMD ["gunicorn", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "app.main:app", "--bind", "0.0.0.0:8084"]
+

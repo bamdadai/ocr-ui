@@ -1,21 +1,16 @@
 # ====================================================================
-# GPU-Enabled Production Dockerfile (CUDA-enabled, single-stage)
+# CPU-Only Production Dockerfile
 # ====================================================================
 
-# Base image with CUDA 12.4 + cuDNN on Ubuntu 22.04
-FROM nvidia/cuda:12.6.0-cudnn-runtime-ubuntu22.04
+# Base image with Python 3.12 on Ubuntu 22.04
+FROM python:3.12-slim
 
 # Allow switching requirement set at build-time (api.txt, worker.txt, base.txt)
 ARG REQ_FILE=requirements/base.txt
 
 # 1) System dependencies
-# Remove NVIDIA apt repos (can be blocked or cause 403 in some environments) before updating
-RUN rm -f /etc/apt/sources.list.d/cuda* /etc/apt/sources.list.d/nvidia* || true \
-    && apt-get update \
+RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-    python3 \
-    python3-venv \
-    python3-pip \
     poppler-utils \
     libgl1-mesa-dev \
     libglib2.0-0 \
@@ -27,6 +22,10 @@ RUN rm -f /etc/apt/sources.list.d/cuda* /etc/apt/sources.list.d/nvidia* || true 
     libgomp1 \
     ccache \
     build-essential \
+    # Debugging tools
+    iputils-ping \
+    curl \
+    htop \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # 2) Create Python venv inside final image and install dependencies
@@ -35,9 +34,9 @@ ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 WORKDIR /opt
 RUN python3 -m venv "$VIRTUAL_ENV" && . "$VIRTUAL_ENV/bin/activate" && pip install --upgrade pip
 
-# Install GPU-enabled versions of ML libraries
+# Install CPU-only versions of ML libraries
 RUN . "$VIRTUAL_ENV/bin/activate" && python -m pip install paddlepaddle==3.2.0 -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
-RUN . "$VIRTUAL_ENV/bin/activate" && pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cu126
+RUN . "$VIRTUAL_ENV/bin/activate" && pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
 
 COPY requirements/ ./requirements/
 RUN . "$VIRTUAL_ENV/bin/activate" && pip install --timeout=600 -r ${REQ_FILE}
@@ -48,7 +47,7 @@ COPY  assets/ ./assets/
 COPY  app/ ./app/
 COPY  static/ ./static/
 COPY  templates/ ./templates/
-COPY  master_config.gpu.json ./master_config.json
+COPY  master_config.cpu.json ./master_config.json
 
 # Ensure project root is importable for Celery/Gunicorn processes
 ENV PYTHONPATH=/app

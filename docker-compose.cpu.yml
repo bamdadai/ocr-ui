@@ -38,10 +38,11 @@ services:
   api:
     build:
       context: .
-      dockerfile: Dockerfile.cpu
+      dockerfile: Dockerfile.api
       pull: false
       args:
         REQ_FILE: requirements/api.txt
+        CONFIG_FILE: master_config.cpu.json
     pull_policy: never
     container_name: ocr_api
     restart: unless-stopped
@@ -53,7 +54,6 @@ services:
     environment:
       - PYTHONPATH=/app
     volumes:
-      - ./weights:/app/weights:ro
       - ./logs:/app/logs
     depends_on:
       redis: { condition: service_healthy }
@@ -62,13 +62,13 @@ services:
       - ocr_network
 
   # ===================================
-  # Unified Celery Worker
+  # CPU-Only Celery Worker
   # ===================================
 
   worker:
     build:
       context: .
-      dockerfile: Dockerfile.cpu
+      dockerfile: Dockerfile.worker-cpu
       pull: false
       args:
         REQ_FILE: requirements/worker-cpu.txt
