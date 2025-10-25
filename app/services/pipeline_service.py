@@ -17,7 +17,7 @@ from app.utils.image_processing import (
     rebase_polygon
 )
 from app.utils.text_processing import fix_mixed_text_order
-from app.utils.visualization import save_word_polygons_on_page, save_line_parts_visualization
+from app.utils.visualization import save_word_polygons_on_page, save_line_parts_visualization, save_word_crops
 from app.utils.performance_logging import log_stage_timing
 
 logger = structlog.get_logger(__name__)
@@ -59,6 +59,7 @@ class PipelineService:
         self.recognition_debug = recognition_config.get('debug', False)
         self.word_polygons_debug_path = Path(recognition_config.get('debug_word_polygons_path', 'debug/word_polygons'))
         self.parts_debug_path = Path(recognition_config.get('debug_parts_path', 'debug/parts'))
+        self.word_crops_debug_path = Path(recognition_config.get('debug_word_crops_path', 'debug/word_crops'))
 
         # Text rendering configuration for line grouping
         text_rendering_cfg = config.get('text_rendering', {})
@@ -463,5 +464,26 @@ class PipelineService:
                 'text': '',  # We don't have individual word text anymore
                 'prob': line_conf  # Use line confidence as approximation
             })
+
+        if self.recognition_debug and word_data:
+            try:
+                save_word_crops(
+                    word_data=word_data,
+                    save_dir=self.word_crops_debug_path,
+                    line_id=line_id
+                )
+                logger.debug(
+                    "pipeline_service.word_crops_saved",
+                    line_id=line_id,
+                    count=len(word_data),
+                    path=str(self.word_crops_debug_path)
+                )
+            except Exception as e:
+                logger.warning(
+                    "pipeline_service.word_crops_debug_failed",
+                    line_id=line_id,
+                    error=str(e),
+                    exc_info=True
+                )
 
         return text_line, line_conf, word_data

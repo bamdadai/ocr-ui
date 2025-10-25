@@ -200,3 +200,46 @@ def save_line_parts_visualization(
     output_path = save_dir / filename
 
     cv2.imwrite(str(output_path), debug_image)
+
+
+def save_word_crops(
+    word_data: List[dict],
+    save_dir: Path,
+    line_id: str = None
+) -> None:
+    """
+    Writes individual word crops to disk for debug inspection.
+
+    Args:
+        word_data: List of dicts each with a 'crop' numpy array and optional 'text'.
+        save_dir: Root directory where crops will be saved.
+        line_id: Optional line identifier used to create a subfolder for the crops.
+    """
+    if not word_data:
+        return
+
+    save_dir.mkdir(parents=True, exist_ok=True)
+
+    if line_id:
+        safe_line_id = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in line_id)
+        target_dir = save_dir / safe_line_id
+    else:
+        target_dir = save_dir / f"line_{uuid.uuid4().hex[:6]}"
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    for idx, word_info in enumerate(word_data):
+        crop = word_info.get('crop')
+        if crop is None or not isinstance(crop, np.ndarray) or crop.size == 0:
+            continue
+
+        raw_text = word_info.get('text') or ''
+        sanitized = "".join(ch for ch in raw_text if ch.isalnum())
+        if not sanitized:
+            sanitized = "word"
+        sanitized = sanitized[:32]  # Avoid very long filenames
+
+        unique_id = uuid.uuid4().hex[:6]
+        filename = f"{idx:03d}_{sanitized}_{unique_id}.jpg"
+        output_path = target_dir / filename
+
+        cv2.imwrite(str(output_path), crop)
