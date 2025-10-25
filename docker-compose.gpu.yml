@@ -60,19 +60,21 @@ services:
       - ocr_network
 
   # ===================================
-  # Specialized Celery Workers
+  # Unified Celery Worker
   # ===================================
 
-  worker_pipeline:
+  worker:
     build:
       context: .
       dockerfile: Dockerfile.gpu
       args:
         REQ_FILE: requirements/worker-gpu.txt
-    container_name: ocr_worker_pipeline
+    container_name: ocr_worker
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     working_dir: /app
-    command: python -m celery -A app.worker.celery_app worker -l info -Q ocr_pipeline -c 1
+    command: python -m celery -A app.worker.celery_app worker -l info -Q ocr_pipeline,dispatch,webhooks -c 6
     env_file: .env
     environment:
       - PYTHONPATH=/app
@@ -80,7 +82,6 @@ services:
       - ./weights:/app/weights:ro
       - ./debug:/app/debug
       - ./logs:/app/logs
-    gpus: all
     deploy:
       resources:
         reservations:
@@ -91,51 +92,6 @@ services:
     depends_on:
       redis: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
-    networks:
-      - ocr_network
-
-  worker_dispatch:
-    build:
-      context: .
-      dockerfile: Dockerfile.gpu
-      args:
-        REQ_FILE: requirements/worker-gpu.txt
-    container_name: ocr_worker_dispatch
-    restart: unless-stopped
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    working_dir: /app
-    command: python -m celery -A app.worker.celery_app worker -l info -Q dispatch -c 1 --prefetch-multiplier=1 --max-tasks-per-child=1
-    env_file: .env
-    environment:
-      - PYTHONPATH=/app
-    volumes:
-      - ./weights:/app/weights:ro
-      - ./debug:/app/debug
-      - ./logs:/app/logs
-    depends_on: [redis, rabbitmq]
-    networks:
-      - ocr_network
-
-  worker_webhooks:
-    build:
-      context: .
-      dockerfile: Dockerfile.gpu
-      args:
-        REQ_FILE: requirements/worker-gpu.txt
-    container_name: ocr_worker_webhooks
-    restart: unless-stopped
-    working_dir: /app
-    command: python -m celery -A app.worker.celery_app worker -l info -Q webhooks -c 4
-    env_file: .env
-    environment:
-      - PYTHONPATH=/app
-    volumes:
-      - ./weights:/app/weights:ro
-      - ./logs:/app/logs
-    depends_on: [redis, rabbitmq]
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     networks:
       - ocr_network
 
