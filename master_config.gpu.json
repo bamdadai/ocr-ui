@@ -1,7 +1,7 @@
 {
-  "debug": true,
+  "debug": false,
   "logging": {
-    "level": "DEBUG",
+    "level": "INFO",
     "log_requests": true,
     "log_performance": true,
     "log_memory_usage": true,
@@ -31,7 +31,7 @@
       "max_batch_size": 8,
       "memory_limit_mb": 16000
     },
-    "debug": true,
+    "debug": false,
     "debug_word_path": "debug/word_detections",
     "debug_line_path": "debug/line_detections"
   },
@@ -40,10 +40,10 @@
     "checkpoint": "weights/recognition_model.ckpt",
     "batch_size": 64,
     "min_conf": 0.8,
-    "debug": true
+    "debug": false
   },
   "pipeline": {
-    "debug": true,
+    "debug": false,
     "enable_recognition": true
   },
   "text_rendering": {
