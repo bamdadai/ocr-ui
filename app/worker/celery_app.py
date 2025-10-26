@@ -54,11 +54,20 @@ def on_task_prerun(task_id=None, task=None, args=None, kwargs=None, **extras):
     # Store the start time on the task object to calculate duration later.
     task.start_time = time.time()
 
-    logger.info(
-        "task_started",
-        task_name=task.name,
-        task_id=task_id
-    )
+    # Log at DEBUG level for OCR pipeline tasks to reduce noise
+    task_name = task.name
+    if task_name in ('ocr.pipeline.detect_lines', 'ocr.pipeline.detect_words', 'ocr.pipeline.recognize_page'):
+        logger.debug(
+            "task_started",
+            task_name=task_name,
+            task_id=task_id
+        )
+    else:
+        logger.info(
+            "task_started",
+            task_name=task_name,
+            task_id=task_id
+        )
 
 
 @task_postrun.connect
@@ -70,13 +79,24 @@ def on_task_postrun(task_id=None, task=None, state=None, **kwargs):
     start_time = getattr(task, 'start_time', None)
     duration = time.time() - start_time if start_time else -1
 
-    logger.info(
-        "task_finished",
-        task_name=task.name,
-        task_id=task_id,
-        status=state,
-        duration_seconds=round(duration, 4)
-    )
+    # Log at DEBUG level for OCR pipeline tasks to reduce noise
+    task_name = task.name
+    if task_name in ('ocr.pipeline.detect_lines', 'ocr.pipeline.detect_words', 'ocr.pipeline.recognize_page'):
+        logger.debug(
+            "task_finished",
+            task_name=task_name,
+            task_id=task_id,
+            status=state,
+            duration_seconds=round(duration, 4)
+        )
+    else:
+        logger.info(
+            "task_finished",
+            task_name=task_name,
+            task_id=task_id,
+            status=state,
+            duration_seconds=round(duration, 4)
+        )
 
     # Clear the correlation ID to prevent it from leaking to other tasks
     # that might be processed by the same worker process.

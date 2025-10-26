@@ -1,0 +1,11 @@
+---
+alwaysApply: true
+---
+
+Do not create new documents files unless I specifiy ask you for it.
+
+Also If changes should be reflected to already existent documents please update the documents.
+
+If the document is created, it should be placed in docs folder of project
+
+

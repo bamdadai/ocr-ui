@@ -10,6 +10,7 @@ from celery.result import AsyncResult
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from app.core.logging import correlation_id_var
+from app.core.log_events import LogEvent
 from app.worker.celery_app import app as celery_app
 from app.worker.state_manager import StateManager
 from app.schemas.ocr import (
@@ -42,7 +43,7 @@ async def create_ocr_task(
         normalized_webhook = stripped if stripped else None
 
     logger.info(
-        "ocr.request.received",
+        LogEvent.API_REQUEST_RECEIVED,
         file_count=len(files),
         webhook_url=normalized_webhook,
         has_metadata=metadata is not None
@@ -51,7 +52,7 @@ async def create_ocr_task(
     # Determine if webhook should be used (based on webhook_url presence)
     use_webhook = bool(normalized_webhook)
 
-    logger.info(
+    logger.debug(
         "ocr.webhook.mode",
         use_webhook=use_webhook,
         webhook_url=normalized_webhook,
@@ -95,7 +96,7 @@ async def create_ocr_task(
         normalized_metadata["format"] = metadata_format
 
         if metadata_format not in ALLOWED_FILE_EXTENSIONS:
-            logger.warning("queue.unsupported_format", guid=guid, format=metadata_format)
+            logger.warning(LogEvent.API_UNSUPPORTED_FORMAT, guid=guid, format=metadata_format)
             queue_results.append(TaskQueueItem(task_id=None, status="error", guid=guid))
             continue
 
@@ -117,8 +118,8 @@ async def create_ocr_task(
             staged_chunks = staged_metadata.get("chunks", 0)
             del file_bytes
 
-            logger.info(
-                "ocr.task.dispatching",
+            logger.debug(
+                LogEvent.API_TASK_DISPATCHING,
                 guid=guid,
                 task_id=workflow_task_id,
                 filename=upload_file.filename,
@@ -141,7 +142,7 @@ async def create_ocr_task(
             )
 
             logger.info(
-                "ocr.task.dispatched",
+                LogEvent.API_TASK_DISPATCHED,
                 guid=guid,
                 task_id=workflow_task_id,
                 celery_task_id=async_result.id,
@@ -151,14 +152,14 @@ async def create_ocr_task(
         except HTTPException:
             raise
         except Exception as exc:
-            logger.error("queue.dispatch_failed", guid=guid, error=str(exc), exc_info=True)
+            logger.error(LogEvent.API_TASK_DISPATCH_FAILED, guid=guid, error=str(exc), exc_info=True)
             queue_results.append(TaskQueueItem(task_id=None, status="error", guid=guid))
             continue
 
         queue_results.append(TaskQueueItem(task_id=workflow_task_id, status="queued", guid=guid))
 
     logger.info(
-        "ocr.request.completed",
+        LogEvent.API_REQUEST_COMPLETED,
         total_files=len(files),
         queued_count=sum(1 for r in queue_results if r.status == "queued"),
         error_count=sum(1 for r in queue_results if r.status == "error"),

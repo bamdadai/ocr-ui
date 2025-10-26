@@ -177,7 +177,7 @@ class StateManager:
         }
         self._set_data(UPLOAD_META_KEY, metadata, ttl_override=dynamic_ttl)
 
-        logger.info(
+        logger.debug(
             "state.upload_storage.staged",
             request_id=self.request_id,
             total_size=total_size,
