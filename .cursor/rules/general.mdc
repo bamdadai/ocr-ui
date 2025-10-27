@@ -1,0 +1,123 @@
+---
+alwaysApply: true
+---
+
+## Documentation Rule - MUST FOLLOW
+
+### ❌ DO NOT CREATE NEW DOCUMENTS
+- Never create new document files unless explicitly requested
+- Treat document creation as a special action requiring clear user approval
+
+### ✅ DO UPDATE EXISTING DOCUMENTS
+- If analysis/findings should be added to existing documentation, update those files instead
+- Use the `read_file` and `edit_file` tools for this
+
+### 📁 IF CREATION IS APPROVED
+- Only place new documents in the `/docs` folder
+- Notify the user before creating: "Should I create X document in docs/?"
+- Wait for approval before proceeding
+
+### 🔍 DECISION LOGIC
+Before writing to any document file, ask yourself:
+1. Did the user explicitly ask for a document? → Create if approved
+2. Does relevant documentation already exist? → Update it instead
+3. Is this just analysis/findings? → Report verbally; don't create files
+
+---
+
+## SOLID Principles - MUST FOLLOW
+
+### 🏗️ SINGLE RESPONSIBILITY
+- Each function/class has ONE clear purpose
+- Don't mix concerns (e.g., don't combine validation + processing + logging in one method)
+- Extract helper functions when a method does multiple things
+
+### 🔗 OPEN/CLOSED
+- Code should be OPEN for extension, CLOSED for modification
+- Use inheritance, composition, and dependency injection
+- Avoid hardcoding behavior; make it configurable or overridable
+
+### 📋 LISKOV SUBSTITUTION
+- Subtypes must be substitutable for their base types
+- If overriding a method, maintain expected behavior contract
+- Don't break parent class invariants
+
+### 🎯 INTERFACE SEGREGATION
+- Depend on specific interfaces, not broad ones
+- Don't force classes to implement methods they don't need
+- Create focused, minimal interfaces
+
+### 💉 DEPENDENCY INJECTION
+- Pass dependencies as parameters, don't create them inside
+- Use constructor injection or configuration
+- Avoid tight coupling to concrete implementations
+
+---
+
+## Commenting Standards - MUST FOLLOW
+
+### ✅ GOOD COMMENTS (Focus on FUNCTIONALITY & REMOVE AMBIGUITY)
+- **WHY** something works the way it does (not WHAT it does)
+- **Edge cases** and non-obvious behavior
+- **Assumptions** and preconditions
+- **Complex logic** that isn't self-explanatory
+- **Integration points** where different components interact
+
+### ❌ BAD COMMENTS (DO NOT WRITE THESE)
+- Describing the obvious: `x = x + 1  # increment x`
+- Explaining changes you made: `# Changed loop from for to while`
+- Restating the code: `# Check if list is empty` for `if not items:`
+- Over-commenting trivial operations
+- TODOs without context
+
+### 📝 COMMENT EXAMPLES
+
+**GOOD - Explains WHY & removes ambiguity:**
+```python
+# DPI=200 chosen over 300 to balance quality vs memory usage.
+# Higher DPI (300+) causes 5+ GB RAM for 100-page PDFs
+def pdf_to_images(pdf_bytes: bytes, dpi: int = 200):
+    pil_images = convert_from_bytes(pdf_bytes, dpi=dpi)
+    ...
+
+# Batch size halved when memory exceeds 80% to prevent OOM crashes.
+# This is reactive; monitor if threshold needs adjustment for large images.
+if current_memory > self.memory_limit_mb * 0.8:
+    batch_size = max(1, batch_size // 2)
+
+# Redis key includes request_id to prevent collisions in concurrent requests.
+# TTL auto-expires orphaned uploads from failed tasks.
+def _get_key(self, key: str) -> str:
+    return f"ocr_state:{self.request_id}:{key}"
+```
+
+**BAD - Describes changes or restates code:**
+```python
+# Changed DPI from 300 to 200
+def pdf_to_images(pdf_bytes: bytes, dpi: int = 200):
+
+# Halve the batch size
+if current_memory > limit:
+    batch_size = batch_size // 2
+
+# Get the key
+def _get_key(self, key: str) -> str:
+```
+
+### 📍 WHERE TO COMMENT
+- **Function/method**: Purpose, parameters (if non-obvious), assumptions, return value
+- **Complex blocks**: Explain the non-intuitive algorithm or workaround
+- **Hacks/workarounds**: WHY it's necessary, how to remove it later
+- **Integration points**: Where components interact and assumptions made
+- **Constants**: WHY the value was chosen, not WHAT the variable is
+
+### 🎯 COMMENTING GOAL
+> **Remove ambiguity. Enable future developers (including yourself) to understand intent without reading issue trackers, commit history, or guessing.**
+
+---
+
+### ⚠️ EXCEPTION
+- Fixing code files (`.py`, `.js`, etc.) is OK without asking
+- Only documentation files require explicit approval
+
+
