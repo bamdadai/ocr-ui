@@ -67,12 +67,12 @@
       {
         "min_size_bytes": 209715200,
         "chunk_size_bytes": 8388608,
-        "ttl_seconds": 1800
+        "ttl_seconds": 3600
       },
       {
         "min_size_bytes": 125829120,
         "chunk_size_bytes": 6291456,
-        "ttl_seconds": 3600
+        "ttl_seconds": 7200
       }
     ]
   },

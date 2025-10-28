@@ -172,7 +172,7 @@ def recognize_page_task(self, request_id: str, page_index: int) -> dict:
     )
     return {"page_index": page_index}
 
-@app.task(name='app.worker.tasks.send_webhook_result', bind=True, autoretry_for=(RequestException,), retry_kwargs={"max_retries": 3, "countdown": 10})
+@app.task(name='app.worker.tasks.send_webhook_result', bind=True, autoretry_for=(RequestException,), retry_kwargs={"max_retries": 2}, default_retry_delay=5)
 def send_webhook_result(self, webhook_url: str, payload: dict, **kwargs):
     guid = payload.get('guid')
     task_id = payload.get('task_id')
@@ -184,7 +184,7 @@ def send_webhook_result(self, webhook_url: str, payload: dict, **kwargs):
         task_id=task_id,
         webhook_url=webhook_url,
         retry_count=retry_count,
-        max_retries=3,
+        max_retries=2,
         ssl_verify=not settings.ALLOW_INSECURE_WEBHOOKS
     )
 
@@ -193,7 +193,7 @@ def send_webhook_result(self, webhook_url: str, payload: dict, **kwargs):
             webhook_url,
             json=payload,
             verify=not settings.ALLOW_INSECURE_WEBHOOKS,
-            timeout=60
+            timeout=10
         )
         response.raise_for_status()
 
@@ -216,7 +216,9 @@ def send_webhook_result(self, webhook_url: str, payload: dict, **kwargs):
             retry_count=retry_count,
             error=str(exc)
         )
-        raise self.retry(exc=exc)
+        # Exponential backoff: 5s → 10s → fail
+        retry_delay = 5 * (2 ** retry_count)
+        raise self.retry(exc=exc, countdown=retry_delay)
 
     except requests.exceptions.ConnectionError as exc:
         logger.error(
@@ -226,8 +228,11 @@ def send_webhook_result(self, webhook_url: str, payload: dict, **kwargs):
             webhook_url=webhook_url,
             retry_count=retry_count,
             error=str(exc)
+
         )
-        raise self.retry(exc=exc)
+        # Exponential backoff: 5s → 10s → fail
+        retry_delay = 5 * (2 ** retry_count)
+        raise self.retry(exc=exc, countdown=retry_delay)
 
     except requests.exceptions.HTTPError as exc:
         logger.error(
@@ -240,7 +245,9 @@ def send_webhook_result(self, webhook_url: str, payload: dict, **kwargs):
             retry_count=retry_count,
             error=str(exc)
         )
-        raise self.retry(exc=exc)
+        # Exponential backoff: 5s → 10s → fail
+        retry_delay = 5 * (2 ** retry_count)
+        raise self.retry(exc=exc, countdown=retry_delay)
 
     except RequestException as exc:
         logger.error(
@@ -252,7 +259,9 @@ def send_webhook_result(self, webhook_url: str, payload: dict, **kwargs):
             error=str(exc),
             error_type=type(exc).__name__
         )
-        raise self.retry(exc=exc)
+        # Exponential backoff: 5s → 10s → fail
+        retry_delay = 5 * (2 ** retry_count)
+        raise self.retry(exc=exc, countdown=retry_delay)
 
     except Exception as exc:
         # Non-retryable exception
