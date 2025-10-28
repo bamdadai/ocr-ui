@@ -90,9 +90,6 @@ class DetectionService:
         self.timing_enabled = config.get('timing_enabled', True)  # Enable method timing by default
         logger.debug("detection_service.init", debug=self.debug, debug_word_path=config.get('debug_word_path'), debug_line_path=config.get('debug_line_path'))
 
-        # Optional CUDA stream for overlapping H2D copies with compute when using CUDA
-        self._cuda_stream = torch.cuda.Stream() if isinstance(self.device, str) and 'cuda' in self.device else None
-
         # Initialize YOLO models for word detection
         self.models = {
             'word': self._load_yolo_model(config['word_detect']['path']),
@@ -204,9 +201,14 @@ class DetectionService:
     @time_method
     def predict_word_polygons(self, images: List[np.ndarray]) -> Dict[str, List]:
         logger.debug("detection_service.predicting", model_type="word", image_count=len(images))
-        # Use true batched inference with YOLO to avoid per-image execution
-        word_polys = self._predict_yolo_batched(images, model_type='word')
-        return {'word_polygons': word_polys}
+        results = {'word_polygons': self._predict(images, model_type='word')}
+        
+        # GPU memory cleanup after prediction
+        if 'cuda' in self.device:
+            import torch
+            torch.cuda.empty_cache()
+        
+        return results
 
     @time_method
     def predict_line_boxes(self, images: List[np.ndarray]) -> Dict[str, List]:
@@ -304,89 +306,6 @@ class DetectionService:
             model_type=model_type
         )
         return self._process_in_optimal_batches(images, processor_function)
-
-    @time_method
-    def _predict_yolo_batched(self, images: List[np.ndarray], model_type: ModelType) -> List:
-        """
-        Run YOLO inference in batches on a list of images with a single
-        model call per batch. This avoids spawning per-image threads and
-        better utilizes the GPU by letting Ultralytics handle vectorized
-        execution internally.
-
-        Returns a list aligned with input images where each element is the
-        post-processed output for that image.
-        """
-        if not images:
-            return []
-
-        model = self.models[model_type]
-        model_params = self.model_params[model_type]
-        post_process_func = self.post_process_funcs[model_type]
-
-        results_all: List = []
-        batch_size = min(self.max_batch_size, len(images))
-
-        i = 0
-        while i < len(images):
-            batch = images[i:i + batch_size]
-
-            # Inference (optionally under a custom CUDA stream)
-            if self._cuda_stream is not None:
-                with torch.cuda.stream(self._cuda_stream):
-                    infer_start_ns = perf_counter_ns()
-                    results: List[Results] = model(batch, **model_params)
-                    infer_end_ns = perf_counter_ns()
-            else:
-                infer_start_ns = perf_counter_ns()
-                results: List[Results] = model(batch, **model_params)
-                infer_end_ns = perf_counter_ns()
-
-            # Ensure work in our stream is scheduled before we post-process on default stream
-            if self._cuda_stream is not None:
-                torch.cuda.current_stream().wait_stream(self._cuda_stream)  # type: ignore[attr-defined]
-
-            # Timing log for the whole batch
-            log_stage_timing(
-                f"detection.yolo_predict_batch.{model_type}",
-                start_ns=infer_start_ns,
-                end_ns=infer_end_ns,
-                extra={
-                    "device": self.device,
-                    "batch_size": len(batch),
-                },
-            )
-
-            # Per-image post-processing
-            post_start_ns = perf_counter_ns()
-            for j, res in enumerate(results):
-                filtered = self._filter_by_classes(res, model_type)
-                post_processed = post_process_func(filtered)
-                results_all.append(post_processed)
-            post_end_ns = perf_counter_ns()
-
-            log_stage_timing(
-                f"detection.yolo_postprocess_batch.{model_type}",
-                start_ns=post_start_ns,
-                end_ns=post_end_ns,
-                extra={
-                    "device": self.device,
-                    "batch_size": len(batch),
-                    "result_count": sum(len(pp) for pp in results_all[-len(batch):]) if batch else 0,
-                },
-            )
-
-            i += batch_size
-
-            # Dynamically adapt CPU-side batch size based on process RSS
-            current_memory = get_current_memory_usage_mb()
-            if current_memory > self.memory_limit_mb * 0.8 and batch_size > 1:
-                batch_size = max(1, batch_size // 2)
-                logger.warning("detection_service.batch.memory_high", new_batch_size=batch_size, memory_mb=current_memory)
-            elif current_memory < self.memory_limit_mb * 0.4 and batch_size < self.max_batch_size:
-                batch_size = min(self.max_batch_size, batch_size * 2)
-                logger.debug("detection_service.batch.memory_low", new_batch_size=batch_size, memory_mb=current_memory)
-
-        return results_all
 
     @time_method
     def _resolve_allowed_class_ids(self, results: Results, model_type: ModelType) -> Optional[List[int]]:
