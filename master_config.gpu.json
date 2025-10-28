@@ -76,5 +76,20 @@
       }
     ]
   },
+  "hybrid_storage": {
+    "enabled": true,
+    "threshold_mb": 50,
+    "small_files_storage": "redis",
+    "large_files_storage": "minio",
+    "minio": {
+      "enabled": true,
+      "endpoint": "minio:9000",
+      "access_key": "minioadmin",
+      "secret_key": "minioadmin2025",
+      "bucket_name": "ocr-staging",
+      "region": "us-east-1",
+      "secure": false
+    }
+  },
   "valid_ocr_formats": [".jpeg", ".jpg", ".png", ".pdf"]
 }
