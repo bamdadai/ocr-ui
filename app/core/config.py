@@ -78,6 +78,28 @@ class UploadStorageConfig(BaseModel):
             return sorted(v, key=lambda policy: policy.min_size_bytes, reverse=True)
         return v
 
+class MinIOConfig(BaseModel):
+    """Configuration for MinIO object storage."""
+    enabled: bool
+    endpoint: str
+    access_key: str
+    secret_key: str
+    bucket_name: str
+    region: str
+    secure: bool = False
+
+class HybridStorageConfig(BaseModel):
+    """
+    Intelligent storage routing to balance performance and memory:
+    - Small files (<threshold) → Redis (fast, in-memory)
+    - Large files (>=threshold) → MinIO (scalable, preserves RAM)
+    """
+    enabled: bool
+    threshold_mb: int
+    small_files_storage: str = "redis"
+    large_files_storage: str = "minio"
+    minio: MinIOConfig
+
 # --- Main Application Settings Class ---
 
 class Settings(BaseSettings):
@@ -108,6 +130,7 @@ class Settings(BaseSettings):
     # Support top-level orientation configuration as well (optional)
     orientation: Optional[OrientationConfig] = None
     upload_storage: UploadStorageConfig = UploadStorageConfig()
+    hybrid_storage: Optional[HybridStorageConfig] = None
     valid_ocr_formats: List[str]
 
     @field_validator("detection", "recognition", "orientation", mode='before')

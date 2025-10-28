@@ -2,22 +2,26 @@
 Hybrid Storage Manager for OCR Pipeline
 
 Intelligent routing:
-- Files < 50MB: Store in Redis (faster access)
-- Files >= 50MB: Store in MinIO (preserve memory)
+- Files < threshold: Store in Redis (faster access)
+- Files >= threshold: Store in MinIO (preserve memory)
 
 This maximizes performance while preventing OOM on large files.
 """
 
-from typing import Optional, Dict, Tuple
+from typing import Optional, Dict
 import structlog
-from minio import Minio
-from minio.error import S3Error
+try:
+    from minio import Minio
+    from minio.error import S3Error
+    HAS_MINIO = True
+except ImportError:
+    HAS_MINIO = False
+    import warnings
+    warnings.warn("minio library not available. Install with: pip install minio")
+
 import io
 
 logger = structlog.get_logger(__name__)
-
-# MinIO threshold: 50MB
-MINIO_THRESHOLD_BYTES = 50 * 1024 * 1024  # 50MB
 
 
 class HybridStorageManager:
@@ -25,44 +29,54 @@ class HybridStorageManager:
     Smart storage routing based on file size.
     
     Strategy:
-    - Small files (<50MB) → Redis (fast, in-memory)
-    - Large files (≥50MB) → MinIO (scalable, preserves RAM)
+    - Small files (<threshold) → Redis (fast, in-memory)
+    - Large files (>=threshold) → MinIO (scalable, preserves RAM)
     
     This provides best of both worlds:
     - Speed for typical files
     - Memory efficiency for large files
     """
     
-    BUCKET_NAME = "ocr-staging"
-    REGION_NAME = "us-east-1"
-    
-    def __init__(self, threshold_mb: int = 50, endpoint: str = "minio:9000",
-                 access_key: str = "minioadmin",
-                 secret_key: str = "minioadmin2025"):
-        """Initialize hybrid storage with MinIO client.
+    def __init__(self, config):
+        """Initialize hybrid storage with MinIO client from config.
         
         Args:
-            threshold_mb: File size threshold in MB (default: 50)
-            endpoint: MinIO endpoint (default: minio:9000)
-            access_key: MinIO access key
-            secret_key: MinIO secret key
+            config: HybridStorageConfig from settings
         """
-        self.threshold_mb = threshold_mb
-        self.threshold_bytes = threshold_mb * 1024 * 1024
-        self.endpoint = endpoint
+        self.config = config
+        self.threshold_mb = config.threshold_mb
+        self.threshold_bytes = config.threshold_mb * 1024 * 1024
+        self.enabled = config.enabled
+        
+        if not self.enabled:
+            logger.info("hybrid_storage.disabled", reason="Config disabled")
+            self.minio_client = None
+            return
+        
+        if not HAS_MINIO:
+            logger.error("hybrid_storage.minio_not_available", reason="Library not installed")
+            raise RuntimeError("MinIO library not available. Install with: pip install minio")
+        
+        minio_config = config.minio
         
         try:
             self.minio_client = Minio(
-                endpoint,
-                access_key=access_key,
-                secret_key=secret_key,
-                secure=False
+                minio_config.endpoint,
+                access_key=minio_config.access_key,
+                secret_key=minio_config.secret_key,
+                secure=minio_config.secure
             )
             # Ensure bucket exists
-            if not self.minio_client.bucket_exists(self.BUCKET_NAME):
-                self.minio_client.make_bucket(self.BUCKET_NAME, region=self.REGION_NAME)
+            if not self.minio_client.bucket_exists(minio_config.bucket_name):
+                # MinIO make_bucket() doesn't accept region parameter
+                self.minio_client.make_bucket(minio_config.bucket_name)
             
-            logger.info("hybrid_storage.initialized", endpoint=endpoint, threshold_mb=threshold_mb)
+            logger.info(
+                "hybrid_storage.initialized", 
+                endpoint=minio_config.endpoint, 
+                threshold_mb=self.threshold_mb,
+                bucket=minio_config.bucket_name
+            )
         except Exception as e:
             logger.error("hybrid_storage.minio_init_failed", error=str(e))
             raise
@@ -83,12 +97,16 @@ class HybridStorageManager:
     def upload_to_minio(self, request_id: str, file_bytes: bytes, 
                        filename: str) -> Dict:
         """Upload large file to MinIO."""
+        if not self.enabled or self.minio_client is None:
+            raise RuntimeError("Hybrid storage is not enabled or MinIO client not initialized")
+        
+        minio_config = self.config.minio
         object_name = f"{request_id}/{filename}"
         file_size = len(file_bytes)
         
         try:
             self.minio_client.put_object(
-                bucket_name=self.BUCKET_NAME,
+                bucket_name=minio_config.bucket_name,
                 object_name=object_name,
                 data=io.BytesIO(file_bytes),
                 length=file_size
@@ -115,11 +133,15 @@ class HybridStorageManager:
     
     def download_from_minio(self, request_id: str, filename: str) -> bytes:
         """Download large file from MinIO."""
+        if not self.enabled or self.minio_client is None:
+            raise RuntimeError("Hybrid storage is not enabled or MinIO client not initialized")
+        
+        minio_config = self.config.minio
         object_name = f"{request_id}/{filename}"
         
         try:
             response = self.minio_client.get_object(
-                bucket_name=self.BUCKET_NAME,
+                bucket_name=minio_config.bucket_name,
                 object_name=object_name
             )
             file_bytes = response.read()
@@ -138,11 +160,15 @@ class HybridStorageManager:
     
     def delete_from_minio(self, request_id: str, filename: str) -> bool:
         """Delete file from MinIO."""
+        if not self.enabled or self.minio_client is None:
+            return False
+        
+        minio_config = self.config.minio
         object_name = f"{request_id}/{filename}"
         
         try:
             self.minio_client.remove_object(
-                bucket_name=self.BUCKET_NAME,
+                bucket_name=minio_config.bucket_name,
                 object_name=object_name
             )
             logger.debug("hybrid_storage.deleted_from_minio", 
@@ -155,9 +181,13 @@ class HybridStorageManager:
     
     def cleanup_minio_request(self, request_id: str) -> int:
         """Delete all files for a request from MinIO."""
+        if not self.enabled or self.minio_client is None:
+            return 0
+        
+        minio_config = self.config.minio
         try:
             objects = self.minio_client.list_objects(
-                bucket_name=self.BUCKET_NAME,
+                bucket_name=minio_config.bucket_name,
                 prefix=f"{request_id}/"
             )
             
@@ -165,7 +195,7 @@ class HybridStorageManager:
             for obj in objects:
                 try:
                     self.minio_client.remove_object(
-                        bucket_name=self.BUCKET_NAME,
+                        bucket_name=minio_config.bucket_name,
                         object_name=obj.object_name
                     )
                     deleted_count += 1
@@ -178,17 +208,3 @@ class HybridStorageManager:
         except S3Error as e:
             logger.error("hybrid_storage.minio_cleanup_failed", error=str(e))
             return 0
-
-
-# Singleton instance
-_hybrid_storage: Optional[HybridStorageManager] = None
-
-
-def get_hybrid_storage() -> HybridStorageManager:
-    """Get or create hybrid storage manager (singleton)."""
-    global _hybrid_storage
-    
-    if _hybrid_storage is None:
-        _hybrid_storage = HybridStorageManager()
-    
-    return _hybrid_storage
