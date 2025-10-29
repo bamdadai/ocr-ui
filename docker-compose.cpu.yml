@@ -33,17 +33,17 @@ services:
       start_period: 30s
 
   # -------------------------
-  # Application Services
+  # Application Services (Offline Mode - using pre-loaded images or building)
+  # API image with CPU config (master_config.cpu.json) baked in
   # -------------------------
   api:
     build:
       context: .
       dockerfile: Dockerfile.api
-      pull: false
       args:
         REQ_FILE: requirements/api.txt
         CONFIG_FILE: master_config.cpu.json
-    pull_policy: never
+    image: ocr-api:latest
     container_name: ocr_api
     restart: unless-stopped
     working_dir: /app
@@ -63,16 +63,16 @@ services:
 
   # ===================================
   # CPU-Only Celery Workers (Separated)
+  # All use the same worker image, different queues
   # ===================================
 
   worker-dispatch:
     build:
       context: .
       dockerfile: Dockerfile.worker-cpu
-      pull: false
       args:
         REQ_FILE: requirements/worker-cpu.txt
-    pull_policy: never
+    image: ocr-worker:latest
     container_name: ocr_worker_dispatch
     restart: unless-stopped
     working_dir: /app
@@ -94,10 +94,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.worker-cpu
-      pull: false
       args:
         REQ_FILE: requirements/worker-cpu.txt
-    pull_policy: never
+    image: ocr-worker:latest
     container_name: ocr_worker_ocr
     restart: unless-stopped
     working_dir: /app
@@ -119,10 +118,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.worker-cpu
-      pull: false
       args:
         REQ_FILE: requirements/worker-cpu.txt
-    pull_policy: never
+    image: ocr-worker:latest
     container_name: ocr_worker_webhooks
     restart: unless-stopped
     working_dir: /app
@@ -176,3 +174,4 @@ volumes:
   redis_data:
   rabbitmq_data:
   minio_data:
+

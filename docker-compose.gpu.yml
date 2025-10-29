@@ -33,7 +33,8 @@ services:
       start_period: 30s
 
   # -------------------------
-  # Application Services
+  # Application Services (Offline Mode - using pre-loaded images or building)
+  # API image with GPU config (master_config.gpu.json) baked in
   # -------------------------
   api:
     build:
@@ -42,6 +43,7 @@ services:
       args:
         REQ_FILE: requirements/api.txt
         CONFIG_FILE: master_config.gpu.json
+    image: ocr-api-gpu:latest
     container_name: ocr_api
     restart: unless-stopped
     working_dir: /app
@@ -60,7 +62,9 @@ services:
       - ocr_network
 
   # ===================================
-  # GPU-Enabled Celery Workers (Separated)
+  # GPU-Enabled Celery Workers
+  # - dispatch and webhooks use CPU worker image
+  # - ocr uses GPU worker image with NVIDIA GPU support
   # ===================================
 
   worker-dispatch:
@@ -69,6 +73,7 @@ services:
       dockerfile: Dockerfile.worker-cpu
       args:
         REQ_FILE: requirements/worker-cpu.txt
+    image: ocr-worker:latest
     container_name: ocr_worker_dispatch
     restart: unless-stopped
     working_dir: /app
@@ -92,6 +97,7 @@ services:
       dockerfile: Dockerfile.worker-gpu
       args:
         REQ_FILE: requirements/worker-gpu.txt
+    image: ocr-worker-gpu:latest
     container_name: ocr_worker_ocr
     restart: unless-stopped
     extra_hosts:
@@ -124,6 +130,7 @@ services:
       dockerfile: Dockerfile.worker-cpu
       args:
         REQ_FILE: requirements/worker-cpu.txt
+    image: ocr-worker:latest
     container_name: ocr_worker_webhooks
     restart: unless-stopped
     working_dir: /app
@@ -147,7 +154,6 @@ services:
 
   minio:
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z-cpuv1
-
     container_name: ocr_minio
     restart: unless-stopped
     ports:
@@ -178,3 +184,4 @@ volumes:
   redis_data:
   rabbitmq_data:
   minio_data:
+
