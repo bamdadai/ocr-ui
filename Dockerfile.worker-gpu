@@ -61,6 +61,7 @@ RUN . "$VIRTUAL_ENV/bin/activate" \
 # Copy application code and models
 WORKDIR /app
 COPY app/ ./app/
+COPY ppocr/ ./ppocr/
 COPY static/ ./static/
 COPY templates/ ./templates/
 COPY master_config.gpu.json ./master_config.json

@@ -35,6 +35,7 @@ class RecognitionConfig(BaseModel):
     min_conf: float
     checkpoint: Path
     debug: bool
+    paddle_rec: Dict[str, Any] = {}
     debug_word_polygons_path: Path = PROJECT_ROOT / "debug/word_polygons"
     debug_parts_path: Path = PROJECT_ROOT / "debug/parts"
     debug_word_crops_path: Path = PROJECT_ROOT / "debug/word_crops"
@@ -144,7 +145,7 @@ class Settings(BaseSettings):
         if isinstance(v, dict):
             for key, value in v.items():
                 # If the key is a path-related key, resolve it to an absolute path
-                if key in ('path', 'checkpoint') and isinstance(value, str):
+                if key in ('path', 'checkpoint', 'model_path', 'config_path') and isinstance(value, str):
                     path = Path(value)
                     if not path.is_absolute():
                         v[key] = str(PROJECT_ROOT / path)

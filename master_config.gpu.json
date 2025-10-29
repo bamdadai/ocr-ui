@@ -40,7 +40,12 @@
     "checkpoint": "weights/recognition_model.ckpt",
     "batch_size": 64,
     "min_conf": 0.8,
-    "debug": false
+    "debug": false,
+    "paddle_rec": {
+      "model_path": "weights/PP-OCRv5_mobile_rec/best_accuracy",
+      "config_path": "weights/PP-OCRv5_mobile_rec/config.yml",
+      "use_gpu": true
+    }
   },
   "pipeline": {
     "debug": false,

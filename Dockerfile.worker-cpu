@@ -45,6 +45,7 @@ RUN . "$VIRTUAL_ENV/bin/activate" && pip install paddleocr==3.2.0
 WORKDIR /app
 COPY  assets/ ./assets/
 COPY  app/ ./app/
+COPY  ppocr/ ./ppocr/
 COPY  static/ ./static/
 COPY  templates/ ./templates/
 COPY  master_config.cpu.json ./master_config.json
