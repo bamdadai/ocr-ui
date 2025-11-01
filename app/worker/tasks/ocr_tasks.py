@@ -71,7 +71,7 @@ def get_pipeline_service() -> 'PipelineService':
                 except Exception as e:
                     logger.critical("lazy_loading.pipeline_service.failed", error=str(e), sys_path=list(sys.path), exc_info=True)
                     raise
-                pipeline_singleton = PipelineService(settings.model_dump())
+                pipeline_singleton = PipelineService(settings.model_dump(mode='python'))
                 logger.debug("lazy_loading.pipeline_service.success")
     
     return pipeline_singleton

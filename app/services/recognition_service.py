@@ -41,6 +41,14 @@ class RecognitionService:
         self.model_path = paddle_config.get('model_path')
         use_gpu = paddle_config.get('use_gpu', True)
 
+        # Log that we're using PaddleOCR for recognition
+        logger.info(
+            "recognition_service.using_paddle",
+            model_path=self.model_path,
+            config_path=self.config_path,
+            use_gpu=use_gpu
+        )
+
         # Set device
         if use_gpu and paddle.is_compiled_with_cuda():
             paddle.set_device('gpu:0')
@@ -176,6 +184,12 @@ class RecognitionService:
         if not crops:
             return []
 
+        logger.info(
+            "recognition_service.paddle_recognition_start",
+            num_crops=len(crops),
+            device=self.device
+        )
+
         all_results = []
 
         # Process each crop individually
@@ -196,5 +210,11 @@ class RecognitionService:
                 text = ""
 
             all_results.append((text, confidence))
+
+        logger.info(
+            "recognition_service.paddle_recognition_complete",
+            num_crops=len(crops),
+            num_results=len(all_results)
+        )
 
         return all_results

@@ -105,3 +105,4 @@ master_config.json
 *.7z
 /env_ocr
 /weights
+images

@@ -129,9 +129,12 @@ class DetectionService:
         self.post_process_funcs = {
             'word': self._post_process_word_results,
         }
+        # Convert Path objects to strings for compatibility
+        debug_word_path = str(config.get('debug_word_path', 'debug/word_detections'))
+        debug_line_path = str(config.get('debug_line_path', 'debug/line_detections'))
         self.debug_info = {
-            'word': {'path': config['debug_word_path'], 'draw_func': lambda im, res: draw_polygons(im, res, color=(255, 0, 0))},
-            'line': {'path': config['debug_line_path'], 'draw_func': lambda im, res: draw_boxes(im, res, color=(0, 0, 255))}
+            'word': {'path': debug_word_path, 'draw_func': lambda im, res: draw_polygons(im, res, color=(255, 0, 0))},
+            'line': {'path': debug_line_path, 'draw_func': lambda im, res: draw_boxes(im, res, color=(0, 0, 255))}
         }
         self.remove_nested_boxes = config['word_detect'].get('remove_nested', True)
 
@@ -286,8 +289,11 @@ class DetectionService:
                 debug_img = image.copy()
                 debug_img = draw_boxes(debug_img, line_boxes, color=(0, 0, 255))
                 out_path = os.path.join(debug_path_str, f"line_paddle_{uuid.uuid4().hex[:8]}.jpg")
-                cv2.imwrite(out_path, debug_img)
-                logger.debug("detection_service.line_paddle_debug_saved", path=out_path)
+                success = cv2.imwrite(out_path, debug_img)
+                if success:
+                    logger.debug("detection_service.line_paddle_debug_saved", path=out_path)
+                else:
+                    logger.warning("detection_service.line_paddle_debug_save_failed", path=out_path, reason="cv2.imwrite returned False")
             except Exception as e:
                 logger.warning("detection_service.line_paddle_debug_save_failed", error=str(e), exc_info=True)
 
@@ -431,7 +437,8 @@ class DetectionService:
             raise
             
         duration = time.time() - start
-        if self.debug and model_type == 'line':
+        # Save debug visualization for all model types when debug is enabled
+        if self.debug:
             try:
                 fname = f"{model_type}_debug_{uuid.uuid4().hex[:8]}.jpg"
                 debug_path_str = str(debug_path)
