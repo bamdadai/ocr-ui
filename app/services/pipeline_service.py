@@ -18,7 +18,9 @@ from app.utils.image_processing import (
     make_box_from_poly,
     crop_word_from_polygon,
     rebase_polygon,
-    preprocess_recognition_image
+    preprocess_recognition_image,
+    enlarge_polygon,
+    enlarge_polygon_by_percentage
 )
 from app.utils.text_processing import fix_mixed_text_order
 from app.utils.visualization import save_word_polygons_on_page, save_line_parts_visualization, save_word_crops, save_rec_debug_images
@@ -78,6 +80,17 @@ class PipelineService:
             self.preprocessing_sharpness = preprocessing_config.get('sharpness', 0.0)
         else:
             self.preprocessing_enabled = False
+        
+        # Store word boundary enlargement configuration
+        enlargement_config = recognition_config.get('word_boundary_enlargement')
+        if enlargement_config and enlargement_config.get('enabled', False):
+            self.enlargement_enabled = True
+            self.enlargement_pixels = enlargement_config.get('pixels', 0)
+            self.enlargement_percentage = enlargement_config.get('percentage')
+        else:
+            self.enlargement_enabled = False
+            self.enlargement_pixels = 0
+            self.enlargement_percentage = None
 
         # Text rendering configuration for line grouping
         text_rendering_cfg = config.get('text_rendering', {})
@@ -374,6 +387,17 @@ class PipelineService:
         # If line_box is not provided, create a dummy one based on line_crop dimensions
         if line_box is None:
             line_box = [0, 0, line_crop.shape[1], line_crop.shape[0]]
+
+        # Enlarge word polygons if enabled
+        if self.enlargement_enabled:
+            enlarged_word_polygons = []
+            for poly in word_polygons:
+                if self.enlargement_percentage is not None:
+                    enlarged_poly = enlarge_polygon_by_percentage(poly, self.enlargement_percentage)
+                else:
+                    enlarged_poly = enlarge_polygon(poly, self.enlargement_pixels)
+                enlarged_word_polygons.append(enlarged_poly)
+            word_polygons = enlarged_word_polygons
 
         # Split line into parts
         split_start_ns = perf_counter_ns()

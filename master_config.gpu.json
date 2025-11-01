@@ -52,7 +52,12 @@
       "erosion_iterations": 1,
       "contrast": 1.2,
       "brightness": 0.0,
-      "sharpness": 0.0
+      "sharpness": 0.5
+    },
+    "word_boundary_enlargement": {
+      "enabled": false,
+      "pixels": 2,
+      "percentage": null
     }
   },
   "pipeline": {

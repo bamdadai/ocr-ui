@@ -33,6 +33,94 @@ def rebase_polygon(polygon: List[int], offset: Tuple[int, int]) -> List[int]:
     x_offset, y_offset = offset
     return [c + (x_offset if i % 2 == 0 else y_offset) for i, c in enumerate(polygon)]
 
+
+def enlarge_polygon(polygon: List[int], pixels: int) -> List[int]:
+    """
+    Enlarges a polygon by expanding its boundaries outward by the specified pixels.
+    
+    Works by calculating the centroid, then scaling each point away from the center.
+    This expands the polygon uniformly in all directions.
+    
+    Args:
+        polygon: Flat list of coordinates [x1, y1, x2, y2, ...]
+        pixels: Number of pixels to expand outward (can be negative to shrink)
+        
+    Returns:
+        Enlarged polygon as flat list of coordinates
+    """
+    if pixels == 0:
+        return polygon
+    
+    if len(polygon) < 6:  # Need at least 3 points (x1, y1, x2, y2, x3, y3)
+        return polygon
+    
+    # Reshape to (N, 2) array of points
+    points = np.array(polygon, dtype=np.float32).reshape(-1, 2)
+    
+    # Calculate centroid (center point)
+    centroid = np.mean(points, axis=0)
+    
+    # Expand each point outward from centroid
+    enlarged_points = []
+    for point in points:
+        # Vector from centroid to point
+        direction = point - centroid
+        
+        # Calculate distance from centroid
+        distance = np.linalg.norm(direction)
+        
+        if distance > 0:
+            # Normalize direction vector
+            direction_unit = direction / distance
+            
+            # Expand outward by specified pixels
+            new_point = point + direction_unit * pixels
+        else:
+            # If point is at centroid, expand in a default direction
+            new_point = point + np.array([pixels, 0])
+        
+        enlarged_points.append(new_point)
+    
+    # Convert back to flat list and ensure integer coordinates
+    enlarged_polygon = enlarged_points[0].astype(np.int32).tolist()
+    for point in enlarged_points[1:]:
+        enlarged_polygon.extend(point.astype(np.int32).tolist())
+    
+    return enlarged_polygon
+
+
+def enlarge_polygon_by_percentage(polygon: List[int], percentage: float) -> List[int]:
+    """
+    Enlarges a polygon by expanding its boundaries by a percentage of its size.
+    
+    Args:
+        polygon: Flat list of coordinates [x1, y1, x2, y2, ...]
+        percentage: Percentage to expand (0.1 = 10%, -0.1 = shrink by 10%)
+        
+    Returns:
+        Enlarged polygon as flat list of coordinates
+    """
+    if percentage == 0.0:
+        return polygon
+    
+    if len(polygon) < 6:
+        return polygon
+    
+    # Reshape to (N, 2) array of points
+    points = np.array(polygon, dtype=np.float32).reshape(-1, 2)
+    
+    # Calculate bounding box to determine size
+    x_coords = points[:, 0]
+    y_coords = points[:, 1]
+    width = float(np.max(x_coords) - np.min(x_coords))
+    height = float(np.max(y_coords) - np.min(y_coords))
+    
+    # Use average dimension to determine expansion pixels
+    avg_dimension = (width + height) / 2.0
+    pixels = int(avg_dimension * percentage)
+    
+    return enlarge_polygon(polygon, pixels)
+
 def get_polygons_from_masks(masks) -> List[List[int]]:
     """Converts masks (ultralytics Masks object or list of arrays) into polygon coordinates."""
     polygons = []

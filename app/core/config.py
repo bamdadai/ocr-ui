@@ -37,6 +37,12 @@ class RecognitionImagePreprocessingConfig(BaseModel):
     brightness: float = 0.0
     sharpness: float = 0.0
 
+class WordBoundaryEnlargementConfig(BaseModel):
+    """Configuration for enlarging word detection boundaries before recognition."""
+    enabled: bool = False
+    pixels: int = 0  # Expand by fixed pixels (positive = enlarge, negative = shrink)
+    percentage: Optional[float] = None  # Expand by percentage (0.1 = 10%, overrides pixels if set)
+
 class RecognitionConfig(BaseModel):
     """Settings related to the Recognition service."""
     device: str
@@ -49,6 +55,7 @@ class RecognitionConfig(BaseModel):
     debug_parts_path: Path = PROJECT_ROOT / "debug/parts"
     debug_word_crops_path: Path = PROJECT_ROOT / "debug/word_crops"
     image_preprocessing: Optional[RecognitionImagePreprocessingConfig] = None
+    word_boundary_enlargement: Optional[WordBoundaryEnlargementConfig] = None
 
 class OrientationConfig(BaseModel):
     """Settings for optional orientation (rotation) correction using a classification model."""
