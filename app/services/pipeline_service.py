@@ -17,7 +17,8 @@ from app.utils.image_processing import (
     crop_boxes_from_image,
     make_box_from_poly,
     crop_word_from_polygon,
-    rebase_polygon
+    rebase_polygon,
+    preprocess_recognition_image
 )
 from app.utils.text_processing import fix_mixed_text_order
 from app.utils.visualization import save_word_polygons_on_page, save_line_parts_visualization, save_word_crops, save_rec_debug_images
@@ -64,6 +65,19 @@ class PipelineService:
         self.parts_debug_path = Path(recognition_config.get('debug_parts_path', 'debug/parts'))
         self.word_crops_debug_path = Path(recognition_config.get('debug_word_crops_path', 'debug/word_crops'))
         self.rec_debug_path = PROJECT_ROOT / 'debug' / 'rec_debug'
+        
+        # Store image preprocessing configuration
+        preprocessing_config = recognition_config.get('image_preprocessing')
+        if preprocessing_config:
+            self.preprocessing_enabled = True
+            self.preprocessing_padding = preprocessing_config.get('padding', 0)
+            self.preprocessing_erosion_kernel_size = preprocessing_config.get('erosion_kernel_size', 0)
+            self.preprocessing_erosion_iterations = preprocessing_config.get('erosion_iterations', 1)
+            self.preprocessing_contrast = preprocessing_config.get('contrast', 1.0)
+            self.preprocessing_brightness = preprocessing_config.get('brightness', 0.0)
+            self.preprocessing_sharpness = preprocessing_config.get('sharpness', 0.0)
+        else:
+            self.preprocessing_enabled = False
 
         # Text rendering configuration for line grouping
         text_rendering_cfg = config.get('text_rendering', {})
@@ -419,6 +433,22 @@ class PipelineService:
 
         # Recognize each part
         part_crops = [part['crop'] for part in parts]
+        
+        # Apply image preprocessing if enabled
+        if self.preprocessing_enabled:
+            part_crops = [
+                preprocess_recognition_image(
+                    crop,
+                    padding=self.preprocessing_padding,
+                    erosion_kernel_size=self.preprocessing_erosion_kernel_size,
+                    erosion_iterations=self.preprocessing_erosion_iterations,
+                    contrast=self.preprocessing_contrast,
+                    brightness=self.preprocessing_brightness,
+                    sharpness=self.preprocessing_sharpness
+                )
+                for crop in part_crops
+            ]
+        
         recognize_start_ns = perf_counter_ns()
         part_texts_with_probs = self.recognition_service(part_crops)  # type: ignore[misc]
         recognize_end_ns = perf_counter_ns()

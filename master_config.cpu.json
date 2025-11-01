@@ -45,6 +45,14 @@
       "model_path": "weights/PP-OCRv5_mobile_rec/best_accuracy",
       "config_path": "weights/PP-OCRv5_mobile_rec/config.yml",
       "use_gpu": false
+    },
+    "image_preprocessing": {
+      "padding": 5,
+      "erosion_kernel_size": 1,
+      "erosion_iterations": 1,
+      "contrast": 1.2,
+      "brightness": 0.0,
+      "sharpness": 0.0
     }
   },
   "pipeline": {

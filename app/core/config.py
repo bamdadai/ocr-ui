@@ -28,6 +28,15 @@ class DetectionConfig(BaseModel):
     debug_word_path: Path = PROJECT_ROOT / "debug/word_detections"
     debug_line_path: Path = PROJECT_ROOT / "debug/line_detections"
 
+class RecognitionImagePreprocessingConfig(BaseModel):
+    """Image preprocessing settings before recognition."""
+    padding: int = 0
+    erosion_kernel_size: int = 0
+    erosion_iterations: int = 1
+    contrast: float = 1.0
+    brightness: float = 0.0
+    sharpness: float = 0.0
+
 class RecognitionConfig(BaseModel):
     """Settings related to the Recognition service."""
     device: str
@@ -39,6 +48,7 @@ class RecognitionConfig(BaseModel):
     debug_word_polygons_path: Path = PROJECT_ROOT / "debug/word_polygons"
     debug_parts_path: Path = PROJECT_ROOT / "debug/parts"
     debug_word_crops_path: Path = PROJECT_ROOT / "debug/word_crops"
+    image_preprocessing: Optional[RecognitionImagePreprocessingConfig] = None
 
 class OrientationConfig(BaseModel):
     """Settings for optional orientation (rotation) correction using a classification model."""
