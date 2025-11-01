@@ -137,9 +137,9 @@ def save_word_polygons_on_page(
     debug_image = draw_polygons(debug_image, word_polygons, color=(255, 0, 0), thickness=2)
 
     # Save the visualization
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     page_prefix = f"{page_id}_" if page_id else ""
-    unique_id = uuid.uuid4().hex[:8]
-    filename = f"{page_prefix}words_on_page_{unique_id}.jpg"
+    filename = f"{timestamp}_{page_prefix}words_on_page.jpg"
     output_path = save_dir / filename
 
     cv2.imwrite(str(output_path), debug_image)
@@ -195,9 +195,9 @@ def save_line_parts_visualization(
         cv2.rectangle(debug_image, (x, y), (x + w, y + h), color, thickness=3)
 
     # Save the visualization
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     line_prefix = f"{line_id}_" if line_id else ""
-    unique_id = uuid.uuid4().hex[:8]
-    filename = f"{line_prefix}parts_{unique_id}.jpg"
+    filename = f"{timestamp}_{line_prefix}parts.jpg"
     output_path = save_dir / filename
 
     cv2.imwrite(str(output_path), debug_image)
@@ -239,8 +239,8 @@ def save_word_crops(
             sanitized = "word"
         sanitized = sanitized[:32]  # Avoid very long filenames
 
-        unique_id = uuid.uuid4().hex[:6]
-        filename = f"{idx:03d}_{sanitized}_{unique_id}.jpg"
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        filename = f"{timestamp}_{idx:03d}_{sanitized}.jpg"
         output_path = target_dir / filename
 
         cv2.imwrite(str(output_path), crop)

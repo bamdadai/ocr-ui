@@ -4,6 +4,7 @@ import numpy as np
 import torch
 import structlog
 import time
+from datetime import datetime
 from time import perf_counter_ns
 import os
 import functools
@@ -288,7 +289,8 @@ class DetectionService:
                 os.makedirs(debug_path_str, exist_ok=True)
                 debug_img = image.copy()
                 debug_img = draw_boxes(debug_img, line_boxes, color=(0, 0, 255))
-                out_path = os.path.join(debug_path_str, f"line_paddle_{uuid.uuid4().hex[:8]}.jpg")
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                out_path = os.path.join(debug_path_str, f"{timestamp}_line_paddle.jpg")
                 success = cv2.imwrite(out_path, debug_img)
                 if success:
                     logger.debug("detection_service.line_paddle_debug_saved", path=out_path)
@@ -440,7 +442,8 @@ class DetectionService:
         # Save debug visualization for all model types when debug is enabled
         if self.debug:
             try:
-                fname = f"{model_type}_debug_{uuid.uuid4().hex[:8]}.jpg"
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                fname = f"{timestamp}_{model_type}_debug.jpg"
                 debug_path_str = str(debug_path)
                 out_path = os.path.join(debug_path_str, fname)
                 logger.debug("detection_service.debug_saving", model_type=model_type, path=out_path)
