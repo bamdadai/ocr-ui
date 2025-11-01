@@ -6,6 +6,7 @@ such as drawing on images or saving debug plots.
 """
 
 import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import List, Tuple, Sequence, Union
 
@@ -242,4 +243,36 @@ def save_word_crops(
         filename = f"{idx:03d}_{sanitized}_{unique_id}.jpg"
         output_path = target_dir / filename
 
+        cv2.imwrite(str(output_path), crop)
+
+
+def save_rec_debug_images(crops: List[np.ndarray], transcriptions: List[str], save_dir: Path) -> None:
+    """
+    Saves recognition images to rec_debug folder with filename: timestamp_transcription.jpg
+    
+    Args:
+        crops: List of image arrays
+        transcriptions: List of transcription strings
+        save_dir: Directory path (typically 'rec_debug')
+    """
+    if not crops or not transcriptions or len(crops) != len(transcriptions):
+        return
+    
+    save_dir.mkdir(parents=True, exist_ok=True)
+    
+    for crop, transcription in zip(crops, transcriptions):
+        if crop is None or not isinstance(crop, np.ndarray) or crop.size == 0:
+            continue
+        
+        # Generate timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        
+        # Sanitize transcription for filename
+        sanitized = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in transcription).strip()
+        if not sanitized:
+            sanitized = "empty"
+        sanitized = sanitized[:200]  # Limit length
+        
+        filename = f"{timestamp}_{sanitized}.jpg"
+        output_path = save_dir / filename
         cv2.imwrite(str(output_path), crop)

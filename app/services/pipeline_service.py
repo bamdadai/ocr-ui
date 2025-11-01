@@ -4,6 +4,9 @@ import structlog
 from pathlib import Path
 from time import perf_counter_ns
 
+# Import PROJECT_ROOT for consistent path resolution
+from app.core.config import PROJECT_ROOT
+
 # NOTE: Defer heavy service imports to runtime to avoid ImportError masking due to import-time failures
 # (e.g., missing CUDA libs, model weights, or optional deps). Use TYPE_CHECKING for hints only.
 if TYPE_CHECKING:  # pragma: no cover
@@ -17,7 +20,7 @@ from app.utils.image_processing import (
     rebase_polygon
 )
 from app.utils.text_processing import fix_mixed_text_order
-from app.utils.visualization import save_word_polygons_on_page, save_line_parts_visualization, save_word_crops
+from app.utils.visualization import save_word_polygons_on_page, save_line_parts_visualization, save_word_crops, save_rec_debug_images
 from app.utils.performance_logging import log_stage_timing
 
 logger = structlog.get_logger(__name__)
@@ -60,6 +63,7 @@ class PipelineService:
         self.word_polygons_debug_path = Path(recognition_config.get('debug_word_polygons_path', 'debug/word_polygons'))
         self.parts_debug_path = Path(recognition_config.get('debug_parts_path', 'debug/parts'))
         self.word_crops_debug_path = Path(recognition_config.get('debug_word_crops_path', 'debug/word_crops'))
+        self.rec_debug_path = PROJECT_ROOT / 'debug' / 'rec_debug'
 
         # Text rendering configuration for line grouping
         text_rendering_cfg = config.get('text_rendering', {})
@@ -434,6 +438,14 @@ class PipelineService:
                 "part_count": len(part_crops),
             },
         )
+
+        # Save debug images if enabled
+        if self.recognition_debug and part_crops:
+            try:
+                part_texts_list = [text for text, _ in part_texts_with_probs]
+                save_rec_debug_images(part_crops, part_texts_list, self.rec_debug_path)
+            except Exception as e:
+                logger.warning("pipeline_service.rec_debug_save_failed", error=str(e), exc_info=True)
 
         # Combine part texts (right to left, already ordered by split_line_into_parts)
         part_texts = []
