@@ -280,8 +280,37 @@ def send_webhook_result(self, webhook_url: str, payload: dict, **kwargs):
 
 # --- Postprocessing Functions ---
 
-def postprocess_ocr_text(text: str, custom_replacements: dict = None, replacements_json_path: str = None) -> str:
+def postprocess_ocr_text(text: str, config: dict = None) -> str:
+    """
+    Post-processes OCR text with configurable steps.
+    
+    Args:
+        text: Input text to process
+        config: Configuration dictionary with post-processing settings.
+                If None, all steps are enabled by default (backward compatibility).
+                
+    Returns:
+        Post-processed text
+    """
     if not text:
+        return text
+    
+    # Default: enable all if config not provided (backward compatibility)
+    if config is None:
+        config = {
+            'enabled': True,
+            'remove_parentheses': True,
+            'join_spaced_numbers': True,
+            'convert_mixed_digit_sequences': True,
+            'fix_dash_positioning': True,
+            'fix_period_positioning': True,
+            'fix_dash_comma_spacing': True,
+            'apply_custom_replacements': True,
+            'normalize_spacing': True,
+        }
+    
+    # If post-processing is disabled, return text as-is
+    if not config.get('enabled', True):
         return text
 
     # Import here to avoid circular imports
@@ -296,29 +325,39 @@ def postprocess_ocr_text(text: str, custom_replacements: dict = None, replacemen
     )
 
     # Remove parentheses first (before other processing)
-    text = remove_parentheses(text)
+    if config.get('remove_parentheses', True):
+        text = remove_parentheses(text)
 
     # Join spaced numbers first
-    text = join_spaced_numbers(text)
+    if config.get('join_spaced_numbers', True):
+        text = join_spaced_numbers(text)
 
     # Ensure digits adjacent to Persian digits use the Persian glyphs
-    text = convert_mixed_digit_sequences(text)
+    if config.get('convert_mixed_digit_sequences', True):
+        text = convert_mixed_digit_sequences(text)
 
     # Fix dash positioning (move dashes from before numbers to after)
-    text = fix_dash_positioning(text)
+    if config.get('fix_dash_positioning', True):
+        text = fix_dash_positioning(text)
 
     # Fix period positioning (move periods from before Persian numbers to after)
-    text = fix_period_positioning(text)
+    if config.get('fix_period_positioning', True):
+        text = fix_period_positioning(text)
 
     # Fix dash and comma spacing (remove spaces around dashes and Persian commas)
-    text = fix_dash_comma_spacing(text)
+    if config.get('fix_dash_comma_spacing', True):
+        text = fix_dash_comma_spacing(text)
 
-    # Apply custom replacements if provided (either dict or JSON file)
-    if custom_replacements or replacements_json_path:
-        text = apply_custom_replacements(text, custom_replacements, replacements_json_path)
+    # Apply custom replacements if enabled and provided
+    if config.get('apply_custom_replacements', True):
+        custom_replacements = config.get('custom_replacements_dict')
+        replacements_json_path = config.get('custom_replacements_file')
+        if custom_replacements or replacements_json_path:
+            text = apply_custom_replacements(text, custom_replacements, replacements_json_path)
 
     # Normalize spacing: replace multiple consecutive spaces with at most 2 spaces
-    text = re.sub(r' {2,}', '  ', text)
+    if config.get('normalize_spacing', True):
+        text = re.sub(r' {2,}', '  ', text)
 
     return text.strip()
 
@@ -520,21 +559,39 @@ def finalize_and_notify_task(page_results: list, request_id: str, guid: str, web
     # --- FINAL ENCODING FIX ---
     # This standard pattern corrects text that was decoded incorrectly as Latin-1
     # when it should have been UTF-8. We apply it directly.
-    try:
-        full_text = original_text.encode('latin-1').decode('utf-8')
-    except Exception as e:
-        logger.warning(
-            "finalize.encoding_fix_failed",
-            guid=guid,
-            error=str(e),
-            fallback_used=True
-        )
-        # Fallback in the rare case the text is already correct
+    # Load text post-processing config
+    postprocessing_config = settings.recognition.text_postprocessing
+    
+    # Convert Pydantic model to dict if needed
+    if postprocessing_config and hasattr(postprocessing_config, 'model_dump'):
+        postprocessing_dict = postprocessing_config.model_dump()
+    elif postprocessing_config:
+        postprocessing_dict = postprocessing_config.dict() if hasattr(postprocessing_config, 'dict') else postprocessing_config
+    else:
+        postprocessing_dict = None
+    
+    if postprocessing_dict and postprocessing_dict.get('fix_encoding', True):
+        try:
+            full_text = original_text.encode('latin-1').decode('utf-8')
+        except Exception as e:
+            logger.warning(
+                "finalize.encoding_fix_failed",
+                guid=guid,
+                error=str(e),
+                fallback_used=True
+            )
+            # Fallback in the rare case the text is already correct
+            full_text = original_text
+    else:
         full_text = original_text
     # ---------------------------
 
     # --- POSTPROCESSING ---
-    full_text = postprocess_ocr_text(full_text)
+    if postprocessing_dict:
+        full_text = postprocess_ocr_text(full_text, config=postprocessing_dict)
+    else:
+        # Default behavior if no config provided
+        full_text = postprocess_ocr_text(full_text)
     # ---------------------------
 
     avg_confidence = sum(p['confidence'] for p in all_pages) / len(all_pages) if all_pages else 0.0

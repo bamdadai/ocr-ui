@@ -47,17 +47,32 @@
       "use_gpu": false
     },
     "image_preprocessing": {
-      "padding": 10,
+      "padding": 5,
       "erosion_kernel_size": 1,
       "erosion_iterations": 1,
       "contrast": 1.2,
       "brightness": 0.0,
-      "sharpness": 0.5
+      "sharpness": 0.0
     },
     "word_boundary_enlargement": {
       "enabled": false,
       "pixels": 2,
       "percentage": null
+    },
+    "text_postprocessing": {
+      "enabled": false,
+      "remove_parentheses": true,
+      "join_spaced_numbers": true,
+      "convert_mixed_digit_sequences": true,
+      "fix_dash_positioning": true,
+      "fix_period_positioning": true,
+      "fix_dash_comma_spacing": true,
+      "fix_mixed_text_order": true,
+      "apply_custom_replacements": true,
+      "normalize_spacing": true,
+      "fix_encoding": true,
+      "custom_replacements_file": null,
+      "custom_replacements_dict": null
     }
   },
   "pipeline": {

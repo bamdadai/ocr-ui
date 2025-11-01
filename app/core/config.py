@@ -43,6 +43,22 @@ class WordBoundaryEnlargementConfig(BaseModel):
     pixels: int = 0  # Expand by fixed pixels (positive = enlarge, negative = shrink)
     percentage: Optional[float] = None  # Expand by percentage (0.1 = 10%, overrides pixels if set)
 
+class TextPostProcessingConfig(BaseModel):
+    """Configuration for text post-processing steps after OCR recognition."""
+    enabled: bool = True
+    remove_parentheses: bool = True
+    join_spaced_numbers: bool = True
+    convert_mixed_digit_sequences: bool = True
+    fix_dash_positioning: bool = True
+    fix_period_positioning: bool = True
+    fix_dash_comma_spacing: bool = True
+    fix_mixed_text_order: bool = True
+    apply_custom_replacements: bool = True
+    normalize_spacing: bool = True  # Replace multiple spaces with at most 2 spaces
+    fix_encoding: bool = True  # Fix Latin-1 to UTF-8 encoding issues
+    custom_replacements_file: Optional[str] = None  # Path to JSON file with custom replacements
+    custom_replacements_dict: Optional[Dict[str, str]] = None  # Inline replacement dictionary
+
 class RecognitionConfig(BaseModel):
     """Settings related to the Recognition service."""
     device: str
@@ -56,6 +72,7 @@ class RecognitionConfig(BaseModel):
     debug_word_crops_path: Path = PROJECT_ROOT / "debug/word_crops"
     image_preprocessing: Optional[RecognitionImagePreprocessingConfig] = None
     word_boundary_enlargement: Optional[WordBoundaryEnlargementConfig] = None
+    text_postprocessing: Optional[TextPostProcessingConfig] = None
 
 class OrientationConfig(BaseModel):
     """Settings for optional orientation (rotation) correction using a classification model."""

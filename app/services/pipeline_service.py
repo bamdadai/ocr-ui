@@ -91,6 +91,13 @@ class PipelineService:
             self.enlargement_enabled = False
             self.enlargement_pixels = 0
             self.enlargement_percentage = None
+        
+        # Store text post-processing configuration for fix_mixed_text_order
+        postprocessing_config = recognition_config.get('text_postprocessing')
+        if postprocessing_config:
+            self.postprocessing_fix_mixed_text_order = postprocessing_config.get('fix_mixed_text_order', True)
+        else:
+            self.postprocessing_fix_mixed_text_order = True  # Default enabled
 
         # Text rendering configuration for line grouping
         text_rendering_cfg = config.get('text_rendering', {})
@@ -520,7 +527,8 @@ class PipelineService:
 
         # Join parts with spaces (parts are already in RTL order)
         text_line = " ".join(part_texts)
-        text_line = fix_mixed_text_order(text_line)
+        if self.postprocessing_fix_mixed_text_order:
+            text_line = fix_mixed_text_order(text_line)
 
         # Calculate average confidence
         line_conf = sum(part_probs) / len(part_probs) if part_probs else 0.0
