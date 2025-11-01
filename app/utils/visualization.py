@@ -246,26 +246,32 @@ def save_word_crops(
         cv2.imwrite(str(output_path), crop)
 
 
-def save_rec_debug_images(crops: List[np.ndarray], transcriptions: List[str], save_dir: Path) -> None:
+def save_rec_debug_images(crops: List[np.ndarray], transcriptions: List[str], confidences: List[float], save_dir: Path) -> None:
     """
-    Saves recognition images to rec_debug folder with filename: timestamp_transcription.jpg
+    Saves recognition images to rec_debug folder with filename: timestamp_confidence_transcription.jpg
     
     Args:
         crops: List of image arrays
         transcriptions: List of transcription strings
+        confidences: List of confidence scores (0.0-1.0)
         save_dir: Directory path (typically 'rec_debug')
     """
     if not crops or not transcriptions or len(crops) != len(transcriptions):
         return
+    if len(confidences) != len(crops):
+        confidences = [0.0] * len(crops)  # Default to 0.0 if missing
     
     save_dir.mkdir(parents=True, exist_ok=True)
     
-    for crop, transcription in zip(crops, transcriptions):
+    for crop, transcription, confidence in zip(crops, transcriptions, confidences):
         if crop is None or not isinstance(crop, np.ndarray) or crop.size == 0:
             continue
         
         # Generate timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        
+        # Format confidence as 3 decimal places
+        conf_str = f"{confidence:.3f}"
         
         # Sanitize transcription for filename
         sanitized = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in transcription).strip()
@@ -273,6 +279,6 @@ def save_rec_debug_images(crops: List[np.ndarray], transcriptions: List[str], sa
             sanitized = "empty"
         sanitized = sanitized[:200]  # Limit length
         
-        filename = f"{timestamp}_{sanitized}.jpg"
+        filename = f"{timestamp}_{conf_str}_{sanitized}.jpg"
         output_path = save_dir / filename
         cv2.imwrite(str(output_path), crop)

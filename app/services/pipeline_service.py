@@ -443,7 +443,8 @@ class PipelineService:
         if self.recognition_debug and part_crops:
             try:
                 part_texts_list = [text for text, _ in part_texts_with_probs]
-                save_rec_debug_images(part_crops, part_texts_list, self.rec_debug_path)
+                part_confidences = [prob for _, prob in part_texts_with_probs]
+                save_rec_debug_images(part_crops, part_texts_list, part_confidences, self.rec_debug_path)
             except Exception as e:
                 logger.warning("pipeline_service.rec_debug_save_failed", error=str(e), exc_info=True)
 
