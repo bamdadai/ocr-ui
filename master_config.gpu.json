@@ -49,7 +49,7 @@
       "padding": 5,
       "erosion_kernel_size": 0,
       "erosion_iterations": 1,
-      "contrast": 1.4,
+      "contrast": 1.2,
       "brightness": 0.0,
       "sharpness": 0.0
     },

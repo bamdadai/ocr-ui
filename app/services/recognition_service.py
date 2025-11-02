@@ -259,21 +259,21 @@ class RecognitionService:
                 )
                 # If numpy array doesn't work, try encoding to bytes
                 try:
-                    # Encode image to JPEG bytes
-                    _, img_bytes = cv2.imencode('.jpg', img_bgr)
+                    # Encode image to PNG bytes (lossless)
+                    _, img_bytes = cv2.imencode('.png', img_bgr)
                     img_bytes = img_bytes.tobytes()
                     output = self.model.predict(input=img_bytes, batch_size=1)
-                    input_method = "jpeg_bytes"
-                    logger.debug("recognition_service.input_method_success", method="jpeg_bytes")
+                    input_method = "png_bytes"
+                    logger.debug("recognition_service.input_method_success", method="png_bytes")
                 except (TypeError, AttributeError) as e2:
                     logger.debug(
                         "recognition_service.input_method_failed",
-                        method="jpeg_bytes",
+                        method="png_bytes",
                         error_type=type(e2).__name__,
                         error=str(e2)
                     )
                     # Fallback: save to temporary file (last resort)
-                    with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp_file:
+                    with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp_file:
                         tmp_path = tmp_file.name
                         cv2.imwrite(tmp_path, img_bgr)
                     try:

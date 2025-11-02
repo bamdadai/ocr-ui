@@ -100,7 +100,7 @@ def save_recognition_debug_image(crops: List[np.ndarray], results: List[Tuple[st
 
         # Save the figure with a unique name
         unique_id = uuid.uuid4()
-        fig.savefig(save_dir / f'recognition_debug_{unique_id}.jpg', bbox_inches='tight')
+        fig.savefig(save_dir / f'recognition_debug_{unique_id}.png', bbox_inches='tight')
         plt.close(fig) # Close the figure to free up memory
 
 
@@ -139,7 +139,7 @@ def save_word_polygons_on_page(
     # Save the visualization
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     page_prefix = f"{page_id}_" if page_id else ""
-    filename = f"{timestamp}_{page_prefix}words_on_page.jpg"
+    filename = f"{timestamp}_{page_prefix}words_on_page.png"
     output_path = save_dir / filename
 
     cv2.imwrite(str(output_path), debug_image)
@@ -197,7 +197,7 @@ def save_line_parts_visualization(
     # Save the visualization
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     line_prefix = f"{line_id}_" if line_id else ""
-    filename = f"{timestamp}_{line_prefix}parts.jpg"
+    filename = f"{timestamp}_{line_prefix}parts.png"
     output_path = save_dir / filename
 
     cv2.imwrite(str(output_path), debug_image)
@@ -240,7 +240,7 @@ def save_word_crops(
         sanitized = sanitized[:32]  # Avoid very long filenames
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        filename = f"{timestamp}_{idx:03d}_{sanitized}.jpg"
+        filename = f"{timestamp}_{idx:03d}_{sanitized}.png"
         output_path = target_dir / filename
 
         cv2.imwrite(str(output_path), crop)
@@ -248,7 +248,7 @@ def save_word_crops(
 
 def save_rec_debug_images(crops: List[np.ndarray], transcriptions: List[str], confidences: List[float], save_dir: Path) -> None:
     """
-    Saves recognition images to rec_debug folder with filename: timestamp_confidence_transcription.jpg
+    Saves recognition images to rec_debug folder with filename: timestamp_confidence_transcription.png
     
     Args:
         crops: List of image arrays
@@ -279,6 +279,6 @@ def save_rec_debug_images(crops: List[np.ndarray], transcriptions: List[str], co
             sanitized = "empty"
         sanitized = sanitized[:200]  # Limit length
         
-        filename = f"{timestamp}_{conf_str}_{sanitized}.jpg"
+        filename = f"{timestamp}_{conf_str}_{sanitized}.png"
         output_path = save_dir / filename
         cv2.imwrite(str(output_path), crop)

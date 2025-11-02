@@ -290,7 +290,7 @@ class DetectionService:
                 debug_img = image.copy()
                 debug_img = draw_boxes(debug_img, line_boxes, color=(0, 0, 255))
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-                out_path = os.path.join(debug_path_str, f"{timestamp}_line_paddle.jpg")
+                out_path = os.path.join(debug_path_str, f"{timestamp}_line_paddle.png")
                 success = cv2.imwrite(out_path, debug_img)
                 if success:
                     logger.debug("detection_service.line_paddle_debug_saved", path=out_path)
@@ -443,7 +443,7 @@ class DetectionService:
         if self.debug:
             try:
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-                fname = f"{timestamp}_{model_type}_debug.jpg"
+                fname = f"{timestamp}_{model_type}_debug.png"
                 debug_path_str = str(debug_path)
                 out_path = os.path.join(debug_path_str, fname)
                 logger.debug("detection_service.debug_saving", model_type=model_type, path=out_path)
