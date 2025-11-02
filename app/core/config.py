@@ -64,7 +64,6 @@ class RecognitionConfig(BaseModel):
     device: str
     batch_size: int
     min_conf: float
-    checkpoint: Path
     debug: bool
     paddle_rec: Dict[str, Any] = {}
     debug_word_polygons_path: Path = PROJECT_ROOT / "debug/word_polygons"

@@ -37,7 +37,6 @@
   },
   "recognition": {
     "device": "cuda:0",
-    "checkpoint": "weights/recognition_model.ckpt",
     "batch_size": 64,
     "min_conf": 0.8,
     "debug": false,
@@ -48,9 +47,9 @@
     },
     "image_preprocessing": {
       "padding": 5,
-      "erosion_kernel_size": 1,
+      "erosion_kernel_size": 0,
       "erosion_iterations": 1,
-      "contrast": 1.2,
+      "contrast": 1.6,
       "brightness": 0.0,
       "sharpness": 0.0
     },
