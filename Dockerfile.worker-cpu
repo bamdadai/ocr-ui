@@ -40,7 +40,7 @@ RUN . "$VIRTUAL_ENV/bin/activate" && pip install --no-cache-dir torch torchvisio
 
 COPY requirements/ ./requirements/
 RUN . "$VIRTUAL_ENV/bin/activate" && pip install --timeout=600 -r ${REQ_FILE}
-RUN . "$VIRTUAL_ENV/bin/activate" && pip install paddleocr==3.2.0
+RUN . "$VIRTUAL_ENV/bin/activate" && pip install paddleocr==3.3.0
 
 WORKDIR /app
 COPY  assets/ ./assets/

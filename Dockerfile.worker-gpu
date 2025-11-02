@@ -55,7 +55,7 @@ RUN . "$VIRTUAL_ENV/bin/activate" \
 COPY requirements/ ./requirements/
 RUN . "$VIRTUAL_ENV/bin/activate" \
     && pip install --no-cache-dir --timeout=600 -r ${REQ_FILE} \
-    && pip install --no-cache-dir paddleocr==3.2.0 \
+    && pip install --no-cache-dir paddleocr==3.3.0 \
     && pip cache purge
 
 # Copy application code and models
