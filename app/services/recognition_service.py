@@ -157,11 +157,8 @@ class RecognitionService:
                     text = post_result[0][0]
                     confidence = float(post_result[0][1])
 
-            # Reverse text for correct RTL display (Arabic/Persian)
-            # PaddleOCR outputs text in visual LTR order, so we reverse
-            # the entire string to get the correct RTL logical order
-            text = text[::-1]
-
+            # Return text as-is: PaddleOCR outputs text in the order it recognizes.
+            # Post-processing (fix_mixed_text_order) handles RTL/LTR ordering if enabled.
             return (text, confidence)
 
         except Exception as e:
