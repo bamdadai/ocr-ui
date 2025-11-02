@@ -74,7 +74,7 @@ def split_line_into_parts(
     if not word_polygons:
         # No words, return the entire line as one part
         return [{
-            'crop': line_crop,
+            'crop': line_crop.copy(),
             'bbox': [0, 0, line_crop.shape[1], line_crop.shape[0]],
             'word_count': 0
         }]
@@ -267,7 +267,7 @@ def split_line_into_parts(
     # If there's only one part, expand it to cover the entire line width
     if len(parts) == 1:
         parts[0]['bbox'] = [0, 0, line_width, line_height]
-        parts[0]['crop'] = line_crop
+        parts[0]['crop'] = line_crop.copy()
         logger.debug(
             "line_splitting.single_part_expanded",
             original_width=parts[0]['bbox'][2],
@@ -292,7 +292,7 @@ def extract_part_crop(line_crop: np.ndarray, bbox: List[int]) -> np.ndarray:
         bbox: Bounding box in line-local coordinates [x, y, w, h]
 
     Returns:
-        Cropped part image
+        Cropped part image (independent copy, not a view)
     """
     x, y, w, h = bbox
 
@@ -302,7 +302,8 @@ def extract_part_crop(line_crop: np.ndarray, bbox: List[int]) -> np.ndarray:
     x_end = min(line_crop.shape[1], x + w)
     y_end = min(line_crop.shape[0], y + h)
 
-    # Extract the crop
-    part_crop = line_crop[y:y_end, x:x_end]
+    # Extract the crop and make an independent copy to avoid any reference issues
+    # This ensures drawings on line_crop don't affect the crop
+    part_crop = line_crop[y:y_end, x:x_end].copy()
 
     return part_crop

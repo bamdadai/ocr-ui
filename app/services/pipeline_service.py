@@ -395,7 +395,10 @@ class PipelineService:
         if line_box is None:
             line_box = [0, 0, line_crop.shape[1], line_crop.shape[0]]
 
-        # Enlarge word polygons if enabled
+        # Keep original word polygons for debug saving (before enlargement)
+        original_word_polygons = word_polygons.copy() if isinstance(word_polygons, list) else word_polygons
+
+        # Enlarge word polygons if enabled (for recognition only)
         if self.enlargement_enabled:
             enlarged_word_polygons = []
             for poly in word_polygons:
@@ -464,7 +467,31 @@ class PipelineService:
 
         # Recognize each part
         part_crops = [part['crop'] for part in parts]
-        
+
+        # Guard-rail: detect accidental debug overlays leaking into crops
+        for idx, crop in enumerate(part_crops):
+            if crop is None or crop.size == 0:
+                continue
+            # Ensure we are working with a 3-channel view for the colour check
+            channels = crop.shape[2] if crop.ndim == 3 else 1
+            if channels < 3:
+                continue
+            # Blue rectangles are drawn using BGR (255, 0, 0); allow for JPEG artifacts
+            blue_mask = (
+                (crop[:, :, 0] >= 240) &  # B channel high
+                (crop[:, :, 1] <= 15) &   # G channel near zero
+                (crop[:, :, 2] <= 15)     # R channel near zero
+            )
+            if np.any(blue_mask):
+                raise Exception(
+                    f"recognition_debug.blue_border_detected",
+                    {
+                        "line_id": line_id,
+                        "part_index": idx,
+                        "crop_shape": crop.shape
+                    }
+                )
+
         # Apply image preprocessing if enabled
         if self.preprocessing_enabled:
             part_crops = [
@@ -500,9 +527,11 @@ class PipelineService:
             },
         )
 
-        # Save debug images if enabled
+        # Save debug images if enabled - save merged part crops (what's actually sent to recognition)
         if self.recognition_debug and part_crops:
             try:
+                # Save the exact crops that are sent to recognition (after preprocessing if enabled)
+                # These are clean crops without any drawings - extracted from original line_crop
                 part_texts_list = [text for text, _ in part_texts_with_probs]
                 part_confidences = [prob for _, prob in part_texts_with_probs]
                 save_rec_debug_images(part_crops, part_texts_list, part_confidences, self.rec_debug_path)

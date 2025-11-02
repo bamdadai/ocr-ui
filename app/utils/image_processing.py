@@ -11,8 +11,11 @@ def make_box_from_poly(poly: List[int]) -> Tuple[int, int, int, int]:
     return (min(x_coords), min(y_coords), max(x_coords), max(y_coords))
 
 def crop_boxes_from_image(boxes_list: List[List[int]], image: np.ndarray) -> List[np.ndarray]:
-    """Crops multiple bounding box regions from an image."""
-    return [image[int(y1):int(y2), int(x1):int(x2)] for x1, y1, x2, y2 in boxes_list]
+    """Crops multiple bounding box regions from an image.
+    
+    Returns independent copies to prevent modifications to the source image from affecting crops.
+    """
+    return [image[int(y1):int(y2), int(x1):int(x2)].copy() for x1, y1, x2, y2 in boxes_list]
 
 def crop_word_from_polygon(image: np.ndarray, polygon_points: list) -> np.ndarray:
     """Crops a precise word shape from an image using its polygon coordinates."""
