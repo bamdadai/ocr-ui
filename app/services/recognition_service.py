@@ -158,7 +158,6 @@ class RecognitionService:
                     confidence = float(post_result[0][1])
 
             # Return text as-is: PaddleOCR outputs text in the order it recognizes.
-            # Post-processing (fix_mixed_text_order) handles RTL/LTR ordering if enabled.
             return (text, confidence)
 
         except Exception as e:

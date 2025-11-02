@@ -22,7 +22,6 @@ from app.utils.image_processing import (
     enlarge_polygon,
     enlarge_polygon_by_percentage
 )
-from app.utils.text_processing import fix_mixed_text_order
 from app.utils.visualization import save_word_polygons_on_page, save_line_parts_visualization, save_word_crops, save_rec_debug_images
 from app.utils.performance_logging import log_stage_timing
 
@@ -92,12 +91,6 @@ class PipelineService:
             self.enlargement_pixels = 0
             self.enlargement_percentage = None
         
-        # Store text post-processing configuration for fix_mixed_text_order
-        postprocessing_config = recognition_config.get('text_postprocessing')
-        if postprocessing_config:
-            self.postprocessing_fix_mixed_text_order = postprocessing_config.get('fix_mixed_text_order', True)
-        else:
-            self.postprocessing_fix_mixed_text_order = True  # Default enabled
 
         # Text rendering configuration for line grouping
         text_rendering_cfg = config.get('text_rendering', {})
@@ -556,8 +549,6 @@ class PipelineService:
 
         # Join parts with spaces (parts are already in RTL order)
         text_line = " ".join(part_texts)
-        if self.postprocessing_fix_mixed_text_order:
-            text_line = fix_mixed_text_order(text_line)
 
         # Calculate average confidence
         line_conf = sum(part_probs) / len(part_probs) if part_probs else 0.0
