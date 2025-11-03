@@ -108,5 +108,5 @@
       "secure": false
     }
   },
-  "valid_ocr_formats": [".jpeg", ".jpg", ".png", ".pdf"]
+  "valid_ocr_formats": [".jpeg", ".jpg", ".png", ".pdf", ".tiff", ".gif", ".tif"]
 }
