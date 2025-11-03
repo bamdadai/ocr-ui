@@ -181,6 +181,21 @@ class StateManager:
             results.append(self._get_data(f"page_result:{i}"))
         return results
 
+    def save_webhook_metadata(self, webhook_url: str | None, guid: str):
+        """Stores webhook URL and GUID for error handling when tasks fail."""
+        metadata = {
+            "webhook_url": webhook_url,
+            "guid": guid
+        }
+        self._set_data("webhook_metadata", metadata)
+
+    def load_webhook_metadata(self) -> dict:
+        """Retrieves webhook URL and GUID for error handling."""
+        try:
+            return self._get_data("webhook_metadata")
+        except KeyError:
+            return {"webhook_url": None, "guid": None}
+
     def save_upload_blob(self, payload: bytes | bytearray, chunk_size: int | None = None) -> dict:
         """
         Persists a raw upload payload using intelligent routing:

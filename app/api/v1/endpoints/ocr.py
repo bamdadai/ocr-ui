@@ -1,5 +1,6 @@
 # app/api/v1/endpoints/ocr.py
 
+import base64
 import json
 import uuid
 from pathlib import Path
@@ -166,6 +167,31 @@ async def create_ocr_task(
             raise
         except Exception as exc:
             logger.error(LogEvent.API_TASK_DISPATCH_FAILED, guid=guid, error=str(exc), exc_info=True)
+            # Send webhook if provided when dispatch fails (broker issues, etc.)
+            if normalized_webhook:
+                error_message = f"Task dispatch failed: {str(exc)}"
+                error_payload = {
+                    "task_id": workflow_task_id,
+                    "guid": guid,
+                    "text": base64.b64encode("".encode('utf-8')).decode('utf-8'),
+                    "confidence": 0.0,
+                    "status": "error",
+                    "error": error_message
+                }
+                logger.debug(
+                    "webhook.dispatch.error.dispatch_failed",
+                    guid=guid,
+                    task_id=workflow_task_id,
+                    webhook_url=normalized_webhook,
+                    error=error_message
+                )
+                from app.worker.tasks.ocr_tasks import send_webhook_result
+                send_webhook_result.delay(
+                    normalized_webhook,
+                    error_payload,
+                    correlation_id=correlation_id,
+                    task_id=workflow_task_id
+                )
             queue_results.append(TaskQueueItem(task_id=None, status="error", guid=guid))
             continue
 
