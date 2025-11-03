@@ -99,7 +99,7 @@ class NoCeleryFilter(logging.Filter):
 def configure_logging():
     """
     Configures a sophisticated logging system using structlog and standard logging.
-    - Logs are structured as JSON for machine-readability in files.
+    - Logs are human-readable in files for easier inspection.
     - Logs are also sent to the console for development visibility.
     - Each log level (DEBUG, INFO, WARNING, ERROR/CRITICAL) is written to its own dedicated file.
     - No log duplication between files - each level goes to exactly one file.
@@ -150,9 +150,9 @@ def configure_logging():
     console_handler.setFormatter(console_formatter)
     console_handler.addFilter(ThirdPartyDebugFilter())  # Filter noisy third-party debug logs from console
 
-    # --- JSON Formatter for file logs ---
-    json_formatter = structlog.stdlib.ProcessorFormatter(
-        processor=structlog.processors.JSONRenderer(),
+    # --- Human-readable formatter for file logs ---
+    file_formatter = structlog.stdlib.ProcessorFormatter(
+        processor=structlog.dev.ConsoleRenderer(colors=False, pad_event=30),
     )
 
     # --- Handler for Application Info Logs (INFO only) ---
@@ -163,7 +163,7 @@ def configure_logging():
         backupCount=7,
         encoding="utf-8"
     )
-    info_log_handler.setFormatter(json_formatter)
+    info_log_handler.setFormatter(file_formatter)
     info_log_handler.addFilter(InfoOnlyFilter())
     info_log_handler.addFilter(NoCeleryFilter())  # Exclude Celery logs from file
 
@@ -175,7 +175,7 @@ def configure_logging():
         backupCount=7,
         encoding="utf-8"
     )
-    warning_log_handler.setFormatter(json_formatter)
+    warning_log_handler.setFormatter(file_formatter)
     warning_log_handler.addFilter(WarningOnlyFilter())
     warning_log_handler.addFilter(NoCeleryFilter())  # Exclude Celery logs from file
 
@@ -187,7 +187,7 @@ def configure_logging():
         backupCount=7,
         encoding="utf-8"
     )
-    error_log_handler.setFormatter(json_formatter)
+    error_log_handler.setFormatter(file_formatter)
     error_log_handler.addFilter(ErrorCriticalFilter())
     error_log_handler.addFilter(NoCeleryFilter())  # Exclude Celery logs from file
 
@@ -199,7 +199,7 @@ def configure_logging():
         backupCount=7,
         encoding="utf-8"
     )
-    debug_log_handler.setFormatter(json_formatter)
+    debug_log_handler.setFormatter(file_formatter)
     debug_log_handler.addFilter(DebugOnlyFilter())
     debug_log_handler.addFilter(ThirdPartyDebugFilter())  # Filter noisy third-party debug logs
     debug_log_handler.addFilter(NoCeleryFilter())  # Exclude Celery logs from file
@@ -249,7 +249,7 @@ def configure_logging():
             backupCount=5,
             encoding="utf-8"
         )
-        performance_handler.setFormatter(json_formatter)
+        performance_handler.setFormatter(file_formatter)
         performance_handler.addFilter(DebugOnlyFilter())
 
         performance_logger = logging.getLogger("app.performance")

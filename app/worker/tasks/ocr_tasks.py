@@ -177,6 +177,12 @@ def send_webhook_result(self, webhook_url: str, payload: dict, **kwargs):
     guid = payload.get('guid')
     task_id = payload.get('task_id')
     retry_count = self.request.retries
+    correlation_id = kwargs.get('correlation_id') or correlation_id_var.get()
+
+    # Prepare headers - include correlation ID if available
+    headers = {}
+    if correlation_id:
+        headers['X-Correlation-ID'] = correlation_id
 
     logger.debug(
         "webhook.attempt.start",
@@ -185,18 +191,45 @@ def send_webhook_result(self, webhook_url: str, payload: dict, **kwargs):
         webhook_url=webhook_url,
         retry_count=retry_count,
         max_retries=2,
-        ssl_verify=not settings.ALLOW_INSECURE_WEBHOOKS
+        ssl_verify=not settings.ALLOW_INSECURE_WEBHOOKS,
+        has_correlation_id=bool(correlation_id)
     )
 
     try:
+        # Store response before raise_for_status to ensure access to response body
         response = requests.post(
             webhook_url,
             json=payload,
+            headers=headers,
             verify=not settings.ALLOW_INSECURE_WEBHOOKS,
             timeout=10
         )
-        response.raise_for_status()
-
+        
+        # Check status before raise_for_status to capture response details
+        status_code = response.status_code
+        if not response.ok:
+            # Capture response body before raising exception
+            try:
+                response_body = response.text[:1000] if response.text else None
+            except Exception:
+                response_body = None
+            
+            logger.error(
+                "webhook.send.http_error",
+                guid=guid,
+                task_id=task_id,
+                webhook_url=webhook_url,
+                status_code=status_code,
+                response_body=response_body,
+                payload_keys=list(payload.keys()) if payload else None,
+                payload_text_preview=payload.get('text', '')[:100] if payload.get('text') else None,
+                retry_count=retry_count,
+                error=f'{status_code} Client Error: Bad Request for url: {webhook_url}'
+            )
+            # Exponential backoff: 5s → 10s → fail
+            retry_delay = 5 * (2 ** retry_count)
+            response.raise_for_status()  # This will raise HTTPError, but we've already logged
+        
         logger.debug(
             "webhook.send.success",
             guid=guid,
@@ -235,13 +268,22 @@ def send_webhook_result(self, webhook_url: str, payload: dict, **kwargs):
         raise self.retry(exc=exc, countdown=retry_delay)
 
     except requests.exceptions.HTTPError as exc:
+        # Fallback error handler - should rarely be reached now
+        response_obj = getattr(exc, 'response', None)
+        status_code = response_obj.status_code if response_obj else None
+        try:
+            response_body = response_obj.text[:1000] if response_obj and response_obj.text else None
+        except Exception:
+            response_body = None
+        
         logger.error(
             "webhook.send.http_error",
             guid=guid,
             task_id=task_id,
             webhook_url=webhook_url,
-            status_code=exc.response.status_code if exc.response else None,
-            response_body=exc.response.text[:500] if exc.response else None,
+            status_code=status_code,
+            response_body=response_body,
+            payload_keys=list(payload.keys()) if payload else None,
             retry_count=retry_count,
             error=str(exc)
         )
