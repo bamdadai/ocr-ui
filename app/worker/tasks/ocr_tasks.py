@@ -341,7 +341,7 @@ def process_ocr_task(
     metadata = dict(metadata or {})
     state = StateManager(request_id)
 
-    guid = metadata.get('guid', request_id)
+    guid = metadata.get('guid') or request_id  # Uses request_id if guid is None or missing
 
     # Normalise and validate the declared file format against the allow-list.
     declared_format = (metadata.get('format') or metadata.get('file_extension') or "").lower()
