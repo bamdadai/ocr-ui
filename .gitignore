@@ -44,7 +44,7 @@ logs/
 .vscode/
 *.sublime-project
 *.sublime-workspace
-
+webhook_results/
 # فایل‌های مربوط به سیستم‌عامل
 # OS-generated files
 .DS_Store

@@ -120,7 +120,7 @@ def configure_logging():
         ),
         add_correlation_id,
         add_short_context_ids,  # Add shortened IDs for readability
-        structlog.processors.TimeStamper(fmt="iso", utc=True),
+        structlog.processors.TimeStamper(fmt="iso", utc=False),
         structlog.processors.StackInfoRenderer(),
         structlog.processors.format_exc_info,
         structlog.processors.UnicodeDecoder(),
