@@ -204,6 +204,21 @@ def configure_logging():
     debug_log_handler.addFilter(ThirdPartyDebugFilter())  # Filter noisy third-party debug logs
     debug_log_handler.addFilter(NoCeleryFilter())  # Exclude Celery logs from file
 
+    # --- Handler for HTTP Access Logs (human-readable) ---
+    access_log_path = settings.LOG_FILE_PATH.parent / "access.log"
+    access_log_handler = RotatingFileHandler(
+        filename=access_log_path,
+        maxBytes=100 * 1024 * 1024,  # 100 MB
+        backupCount=7,
+        encoding="utf-8"
+    )
+    access_log_formatter = logging.Formatter(
+        fmt="%(asctime)s | %(levelname)s | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S"
+    )
+    access_log_handler.setFormatter(access_log_formatter)
+    access_log_handler.setLevel(logging.INFO)
+
     
     # 4. Configure specific loggers to use the handlers
 
@@ -262,6 +277,13 @@ def configure_logging():
         app_logger.setLevel(logging.DEBUG)
         app_logger.propagate = False
 
+    # --- Access Logger (human-readable endpoint access logs) ---
+    access_logger = logging.getLogger("app.access")
+    access_logger.handlers.clear()
+    access_logger.addHandler(access_log_handler)
+    access_logger.setLevel(logging.INFO)
+    access_logger.propagate = False
+
     # --- Third-party library loggers (reduce noise but keep important info) ---
     third_party_loggers = {
         "uvicorn": logging.INFO,
@@ -298,6 +320,7 @@ def configure_logging():
         warning_log_path=str(warning_log_path),
         error_log_path=str(error_log_path),
         debug_log_path=str(debug_log_path),
+        access_log_path=str(access_log_path),
         performance_log_path=str(performance_log_path) if performance_log_path else None,
         celery_logs_console_only=True
     )

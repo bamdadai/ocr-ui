@@ -7,7 +7,7 @@ from typing import List
 
 import structlog
 from celery.result import AsyncResult
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile, Request
 
 from app.core.logging import correlation_id_var
 from app.core.log_events import LogEvent
@@ -28,6 +28,7 @@ logger = structlog.get_logger(__name__)
 
 @router.post("/ocr", response_model=List[TaskQueueItem])
 async def create_ocr_task(
+    request: Request,
     files: List[UploadFile] = File(..., description="List of files to be processed."),
     metadata: str = Form(None, description="JSON-encoded string containing file metadata (must match the number of uploaded files). For UI requests, this can be omitted."),
     webhook_url: str = Form(None, description="URL where OCR results will be sent upon completion. For UI requests, results are polled directly."),
@@ -36,11 +37,23 @@ async def create_ocr_task(
     Uploads multiple files for OCR processing and returns per-file queue results.
     The results will be sent to the provided webhook URL asynchronously, or polled directly for UI requests.
     """
+    # Store file count for access logging
+    request.state.ocr_file_count = len(files)
+    truncated_metadata = None
+    if metadata is not None:
+        truncated_metadata = metadata if len(metadata) <= 500 else metadata[:500] + "... [truncated]"
+
     # Normalize webhook URL: strip whitespace and convert empty strings to None
     normalized_webhook = None
     if webhook_url:
         stripped = webhook_url.strip()
         normalized_webhook = stripped if stripped else None
+
+    request.state.access_extra_fields = {
+        "webhook_url": normalized_webhook,
+        "metadata": truncated_metadata,
+        "filenames": [file.filename for file in files if file.filename],
+    }
 
     logger.info(
         LogEvent.API_REQUEST_RECEIVED,

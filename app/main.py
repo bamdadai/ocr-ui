@@ -8,6 +8,9 @@ the primary API and UI endpoints.
 
 # --- 1. Core Imports ---
 import uuid
+import time
+import json
+import logging
 import structlog
 
 # --- 2. Third-party Imports ---
@@ -26,6 +29,7 @@ from app.core.logging import configure_logging, correlation_id_var
 # Configure structured logging at startup.
 configure_logging()
 logger = structlog.get_logger(__name__)
+access_logger = logging.getLogger("app.access")
 
 # Create the main FastAPI application instance.
 app = FastAPI(
@@ -58,7 +62,70 @@ async def add_correlation_id_middleware(request: Request, call_next):
     token = correlation_id_var.set(correlation_id)
 
     logger.info("request.started", method=request.method, url=str(request.url))
+    query_params = dict(request.query_params)
+    path_params = dict(request.scope.get("path_params") or {})
+    body_preview = None
+    if request.method.upper() in {"POST", "PUT", "PATCH", "DELETE"}:
+        content_type = request.headers.get("content-type", "")
+        if content_type and "multipart/form-data" not in content_type:
+            try:
+                body_bytes = await request.body()
+                if body_bytes:
+                    request._body = body_bytes  # Allow downstream handlers to re-read the body
+                    body_sent = False
+                    async def receive() -> dict:
+                        nonlocal body_sent
+                        if not body_sent:
+                            body_sent = True
+                            return {"type": "http.request", "body": body_bytes, "more_body": False}
+                        return {"type": "http.request", "body": b"", "more_body": False}
+                    request._receive = receive  # type: ignore[attr-defined]
+                    text_body = body_bytes.decode("utf-8", errors="replace")
+                    if "application/json" in content_type:
+                        try:
+                            parsed_json = json.loads(text_body)
+                            body_preview = json.dumps(parsed_json)
+                        except json.JSONDecodeError:
+                            body_preview = text_body
+                    elif "application/x-www-form-urlencoded" in content_type:
+                        body_preview = text_body
+                    else:
+                        body_preview = f"<{len(body_bytes)} bytes not logged>"
+                    if body_preview and len(body_preview) > 500:
+                        body_preview = body_preview[:500] + "... [truncated]"
+            except Exception as exc:  # pragma: no cover - defensive logging
+                body_preview = f"<unavailable: {exc}>"
+    start_time = time.perf_counter()
     response = await call_next(request)
+    duration_ms = (time.perf_counter() - start_time) * 1000
+    forwarded_for = request.headers.get("x-forwarded-for")
+    if forwarded_for:
+        client_ip = forwarded_for.split(",")[0].strip()
+    else:
+        client_ip = request.client.host if request.client else "unknown"
+    query_string = request.url.query
+    path = request.url.path if not query_string else f"{request.url.path}?{query_string}"
+    parts = [
+        f"ip={client_ip}",
+        request.method,
+        path,
+        f"-> {response.status_code}",
+        f"({duration_ms:.2f} ms)",
+        f"req_id={correlation_id}",
+    ]
+    if query_params:
+        parts.append(f"query={query_params}")
+    if path_params:
+        parts.append(f"path={path_params}")
+    file_count = getattr(request.state, "ocr_file_count", None)
+    if file_count is not None:
+        parts.append(f"files={file_count}")
+    extra_fields = getattr(request.state, "access_extra_fields", None)
+    if extra_fields:
+        parts.append(f"fields={extra_fields}")
+    if body_preview is not None:
+        parts.append(f"body={body_preview}")
+    access_logger.info(" ".join(parts))
     logger.info("request.finished", status_code=response.status_code)
 
     response.headers["X-Correlation-ID"] = correlation_id

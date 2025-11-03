@@ -41,7 +41,7 @@
     "min_conf": 0.7,
     "debug": true,
     "paddle_rec": {
-      "model_dir": "weights/PP-OCRv5_mobile_rec",
+      "model_dir": "weights/PP-OCRv5_mobile_rec_v2",
       "model_name": "arabic_PP-OCRv5_mobile_rec",
       "use_gpu": false
     },
@@ -68,7 +68,7 @@
     "height_tolerance_pixels": 5
   },
   "line_splitting": {
-    "max_width_height_ratio": 4.0,
+    "max_width_height_ratio": 2.0,
     "overlap_threshold": 0.1
   },
   "orientation": {
