@@ -8,12 +8,63 @@ import cv2
 import numpy as np
 from fpdf import FPDF
 from pdf2image import convert_from_bytes
+from PIL import Image, ImageOps
+import io
 import structlog
 
 from app.core.config import settings
 from .text_processing import make_farsi_text_for_pdf
 
 logger = structlog.get_logger(__name__)
+
+def bytes_to_image(image_bytes: bytes) -> np.ndarray:
+    """
+    Decodes image bytes into a NumPy array in BGR format.
+    
+    Uses PIL for robust format support including TIFF, JPEG, PNG, and others.
+    Converts to BGR numpy array for compatibility with OpenCV-based downstream processing.
+    
+    PIL is preferred over cv2.imdecode() because:
+    - Reliable TIFF support (OpenCV TIFF support varies by build)
+    - Better format coverage (WebP, HEIC, etc.)
+    - Consistent behavior across platforms
+    - Proper handling of EXIF orientation metadata
+    
+    Args:
+        image_bytes: Raw image file bytes
+        
+    Returns:
+        NumPy array in BGR format (H, W, 3), dtype uint8
+        
+    Raises:
+        ValueError: If image cannot be decoded or is corrupt
+    """
+    try:
+        pil_image = Image.open(io.BytesIO(image_bytes))
+        
+        # Handle EXIF orientation automatically
+        # ImageOps.exif_transpose handles orientation tags correctly
+        pil_image = ImageOps.exif_transpose(pil_image)
+        
+        # Convert to RGB if necessary (handles grayscale, RGBA, etc.)
+        if pil_image.mode != 'RGB':
+            pil_image = pil_image.convert('RGB')
+        
+        # Convert PIL Image to numpy array and then to BGR for OpenCV compatibility
+        # PIL images are RGB, OpenCV uses BGR, so we swap channels
+        image_array = np.array(pil_image)
+        bgr_image = cv2.cvtColor(image_array, cv2.COLOR_RGB2BGR)
+        
+        return bgr_image
+        
+    except Exception as e:
+        logger.error(
+            "bytes_to_image.decode_failed",
+            error=str(e),
+            error_type=type(e).__name__
+        )
+        raise ValueError(f"Failed to decode image. The file may be corrupt or in an unsupported format: {str(e)}") from e
+
 
 def pdf_to_images(pdf_bytes: bytes, dpi: int = 300) -> List[np.ndarray]:
     """
