@@ -20,13 +20,6 @@ try:
 except ImportError:
     TEXT_RECOGNITION_AVAILABLE = False
 
-# Low-level PaddleOCR API (fallback for custom models)
-import paddle
-from ppocr.data import create_operators, transform
-from ppocr.modeling.architectures import build_model
-from ppocr.postprocess import build_post_process
-from ppocr.utils.save_load import load_model
-
 # --- CHANGE: Updated import path for batchify from the new common module ---
 from app.utils.common import batchify
 
