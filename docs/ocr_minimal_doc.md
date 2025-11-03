@@ -64,11 +64,12 @@
 ## Webhook Callback (Optional)
 - Triggered only when `webhook_url` is provided to the queue endpoint.
 - Method: `POST` to the client-supplied URL with `Content-Type: application/json`.
-- Payload mirrors the successful poll result:
-  - `task_id`, `guid`, `text` (Base64), `confidence`, `status: "completed"`, `error: ""`.
+- Payload mirrors the polling response:
+  - On success: `task_id`, `guid`, `text` (Base64), `confidence`, `status: "completed"`, `error: ""`.
+  - On failure: `task_id`, `guid`, `text` (always Base64, empty string on failure), `confidence: 0.0`, `status: "error"`, `error` populated with the failure reason.
+  - The service always includes a non-null `task_id`; when the original ID is unavailable a fallback UUID is supplied and logged.
 - Delivery guarantees:
   - The service attempts up to 3 deliveries (initial call plus 2 retries) with ~10 s between retries when network errors, timeouts, or non-2xx responses occur.
-  - Webhooks are skipped for workflows that fail before completion; rely on polling for error details.
 - Security: HTTPS is required unless administrators enable insecure webhooks; supply verifiable endpoints and handle the `X-Correlation-ID` header if present.
 
 ## Health Check

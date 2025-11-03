@@ -174,8 +174,21 @@ def recognize_page_task(self, request_id: str, page_index: int) -> dict:
 
 @app.task(name='app.worker.tasks.send_webhook_result', bind=True, autoretry_for=(RequestException,), retry_kwargs={"max_retries": 2}, default_retry_delay=5)
 def send_webhook_result(self, webhook_url: str, payload: dict, **kwargs):
-    guid = payload.get('guid')
-    task_id = payload.get('task_id')
+    payload_data = dict(payload or {})
+    guid = payload_data.get('guid')
+    task_id = payload_data.get('task_id')
+    fallback_task_id = kwargs.get('task_id') or kwargs.get('request_id')
+
+    if not task_id and fallback_task_id:
+        task_id = str(fallback_task_id)
+        payload_data['task_id'] = task_id
+        logger.warning(
+            "webhook.payload.task_id_missing",
+            guid=guid,
+            webhook_url=webhook_url,
+            supplied_fallback=task_id
+        )
+
     retry_count = self.request.retries
     correlation_id = kwargs.get('correlation_id') or correlation_id_var.get()
 
@@ -199,7 +212,7 @@ def send_webhook_result(self, webhook_url: str, payload: dict, **kwargs):
         # Store response before raise_for_status to ensure access to response body
         response = requests.post(
             webhook_url,
-            json=payload,
+            json=payload_data,
             headers=headers,
             verify=not settings.ALLOW_INSECURE_WEBHOOKS,
             timeout=10
@@ -221,8 +234,8 @@ def send_webhook_result(self, webhook_url: str, payload: dict, **kwargs):
                 webhook_url=webhook_url,
                 status_code=status_code,
                 response_body=response_body,
-                payload_keys=list(payload.keys()) if payload else None,
-                payload_text_preview=payload.get('text', '')[:100] if payload.get('text') else None,
+                payload_keys=list(payload_data.keys()) if payload_data else None,
+                payload_text_preview=payload_data.get('text', '')[:100] if payload_data.get('text') else None,
                 retry_count=retry_count,
                 error=f'{status_code} Client Error: Bad Request for url: {webhook_url}'
             )
@@ -283,7 +296,7 @@ def send_webhook_result(self, webhook_url: str, payload: dict, **kwargs):
             webhook_url=webhook_url,
             status_code=status_code,
             response_body=response_body,
-            payload_keys=list(payload.keys()) if payload else None,
+            payload_keys=list(payload_data.keys()) if payload_data else None,
             retry_count=retry_count,
             error=str(exc)
         )
@@ -336,7 +349,11 @@ def process_ocr_task(
     The main entry point task. It dispatches the parallel OCR workflow
     and returns the ID of the main chord workflow for polling.
     """
-    request_id = workflow_id or str(uuid.uuid4())
+    # Ensure request_id is never None - validate workflow_id and generate UUID if needed
+    if workflow_id and workflow_id not in (None, "", "None", "null"):
+        request_id = str(workflow_id)
+    else:
+        request_id = str(uuid.uuid4())
     correlation_context = correlation_id or request_id
     metadata = dict(metadata or {})
     state = StateManager(request_id)
@@ -467,8 +484,10 @@ def process_ocr_task(
         
         # Send error webhook if webhook_url was provided
         if webhook_url:
+            # Defensive check: ensure request_id is never None in error payload
+            safe_task_id = request_id if request_id and request_id not in (None, "", "None", "null") else str(uuid.uuid4())
             error_payload = {
-                "task_id": request_id,
+                "task_id": safe_task_id,
                 "guid": guid,
                 "text": base64.b64encode("".encode('utf-8')).decode('utf-8'),  # Empty base64-encoded text on error
                 "confidence": 0.0,
@@ -482,7 +501,12 @@ def process_ocr_task(
                 webhook_url=webhook_url,
                 error=error_message
             )
-            send_webhook_result.delay(webhook_url, error_payload, correlation_id=correlation_id_var.get())
+            send_webhook_result.delay(
+                webhook_url,
+                error_payload,
+                correlation_id=correlation_id_var.get(),
+                task_id=safe_task_id
+            )
         
         raise
     finally:
@@ -502,6 +526,12 @@ def finalize_and_notify_task(page_results: list, request_id: str, guid: str, web
     Assembles the final document, forcefully corrects text encoding,
     and returns it for the polling mechanism.
     """
+    # Defensive check: ensure request_id is never None
+    if not request_id or request_id in (None, "", "None", "null"):
+        logger.error("finalize.invalid_request_id", request_id=request_id, guid=guid)
+        request_id = str(uuid.uuid4())
+        logger.warning("finalize.generated_fallback_request_id", new_request_id=request_id, guid=guid)
+    
     state = StateManager(request_id)
     page_indices: list[int] = []
     if isinstance(page_results, (list, tuple)):
@@ -561,7 +591,12 @@ def finalize_and_notify_task(page_results: list, request_id: str, guid: str, web
             payload_size=len(final_payload.get('text', '')),
             status=final_payload.get('status')
         )
-        send_webhook_result.delay(webhook_url, final_payload, correlation_id=correlation_id_var.get())
+        send_webhook_result.delay(
+            webhook_url,
+            final_payload,
+            correlation_id=correlation_id_var.get(),
+            task_id=request_id
+        )
     else:
         logger.debug(
             "webhook.skipped",
