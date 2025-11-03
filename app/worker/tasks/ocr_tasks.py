@@ -34,7 +34,7 @@ logger = structlog.get_logger(__name__)
 
 pipeline_singleton: 'PipelineService | None' = None
 _pipeline_lock = threading.Lock()
-ALLOWED_FILE_EXTENSIONS = {".jpeg", ".png", ".pdf", ".jpg", ".tif", ".tiff"}
+ALLOWED_FILE_EXTENSIONS = set(settings.valid_ocr_formats)
 
 def get_pipeline_service() -> 'PipelineService':
     """

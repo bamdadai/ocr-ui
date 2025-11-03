@@ -123,6 +123,8 @@ class PipelineService:
             recognition_debug=self.recognition_debug,
             orientation_enabled=self.orientation_enabled,
             orientation_device=self.orientation_device if self.orientation_enabled else None,
+            max_width_height_ratio=self.max_width_height_ratio,
+            overlap_threshold=self.overlap_threshold,
         )
 
     def _ensure_recognition_loaded(self):

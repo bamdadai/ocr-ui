@@ -98,6 +98,7 @@ def split_line_into_parts(
         "line_splitting.start",
         line_height=line_height,
         line_width=line_width,
+        max_width_height_ratio=max_width_height_ratio,
         max_part_width=max_part_width,
         total_words=len(word_polygons)
     )

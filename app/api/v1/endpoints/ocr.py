@@ -12,6 +12,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile, Request
 
 from app.core.logging import correlation_id_var
 from app.core.log_events import LogEvent
+from app.core.config import settings
 from app.worker.celery_app import app as celery_app
 from app.worker.state_manager import StateManager
 from app.schemas.ocr import (
@@ -24,7 +25,7 @@ from app.schemas.ocr import (
 # Define the router with a prefix and tags for organization
 router = APIRouter(tags=["OCR Processing"])
 
-ALLOWED_FILE_EXTENSIONS = {".jpeg", ".png", ".pdf", ".jpg", ".tif", ".tiff"}
+ALLOWED_FILE_EXTENSIONS = set(settings.valid_ocr_formats)
 logger = structlog.get_logger(__name__)
 
 @router.post("/ocr", response_model=List[TaskQueueItem])
