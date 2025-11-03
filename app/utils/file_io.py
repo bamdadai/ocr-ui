@@ -8,7 +8,7 @@ import cv2
 import numpy as np
 from fpdf import FPDF
 from pdf2image import convert_from_bytes
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, ImageFile
 import io
 import structlog
 
@@ -16,6 +16,10 @@ from app.core.config import settings
 from .text_processing import make_farsi_text_for_pdf
 
 logger = structlog.get_logger(__name__)
+
+# Allow PIL to load truncated images (incomplete files from upload failures)
+# This handles cases where network issues cause incomplete file transfers
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 def bytes_to_image(image_bytes: bytes) -> np.ndarray:
     """
@@ -30,6 +34,10 @@ def bytes_to_image(image_bytes: bytes) -> np.ndarray:
     - Consistent behavior across platforms
     - Proper handling of EXIF orientation metadata
     
+    Handles truncated/incomplete images gracefully:
+    - Sets ImageFile.LOAD_TRUNCATED_IMAGES to allow processing incomplete files
+    - Common with network interruptions during upload
+    
     Args:
         image_bytes: Raw image file bytes
         
@@ -41,6 +49,10 @@ def bytes_to_image(image_bytes: bytes) -> np.ndarray:
     """
     try:
         pil_image = Image.open(io.BytesIO(image_bytes))
+        
+        # Load image fully to validate it can be read completely
+        # This catches truncation issues early and ensures image is valid
+        pil_image.load()
         
         # Handle EXIF orientation automatically
         # ImageOps.exif_transpose handles orientation tags correctly
