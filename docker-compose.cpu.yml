@@ -90,7 +90,7 @@ services:
     networks:
       - ocr_network
 
-  worker-ocr:
+  worker-ocr-lines:
     build:
       context: .
       dockerfile: Dockerfile.worker-cpu
@@ -98,10 +98,49 @@ services:
       args:
         REQ_FILE: requirements/worker-cpu.txt
     pull_policy: never
-    container_name: ocr_worker_ocr
+    image: ocr_worker_ocr
+    container_name: ocr_worker_ocr_lines
     restart: unless-stopped
     working_dir: /app
-    command: python -m celery -A app.worker.celery_app worker -l info -Q ocr_pipeline -c 1
+    command: python -m celery -A app.worker.celery_app worker -l info -Q ocr_lines -c 1
+    env_file: .env
+    environment:
+      - PYTHONPATH=/app
+    volumes:
+      - ./weights:/app/weights:ro
+      - ./debug:/app/debug
+      - ./logs:/app/logs
+    depends_on:
+      redis: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    networks:
+      - ocr_network
+
+  worker-ocr-words:
+    image: ocr_worker_ocr
+    container_name: ocr_worker_ocr_words
+    restart: unless-stopped
+    working_dir: /app
+    command: python -m celery -A app.worker.celery_app worker -l info -Q ocr_words -c 2
+    env_file: .env
+    environment:
+      - PYTHONPATH=/app
+    volumes:
+      - ./weights:/app/weights:ro
+      - ./debug:/app/debug
+      - ./logs:/app/logs
+    depends_on:
+      redis: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    networks:
+      - ocr_network
+
+  worker-ocr-recognize:
+    image: ocr_worker_ocr
+    container_name: ocr_worker_ocr_recognize
+    restart: unless-stopped
+    working_dir: /app
+    command: python -m celery -A app.worker.celery_app worker -l info -Q ocr_recognize -c 1
     env_file: .env
     environment:
       - PYTHONPATH=/app
@@ -126,7 +165,7 @@ services:
     container_name: ocr_worker_webhooks
     restart: unless-stopped
     working_dir: /app
-    command: python -m celery -A app.worker.celery_app worker -l info -Q webhooks -c 8
+    command: python -m celery -A app.worker.celery_app worker -l info -Q webhooks -c 4
     env_file: .env
     environment:
       - PYTHONPATH=/app

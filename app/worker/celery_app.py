@@ -34,7 +34,13 @@ app.conf.worker_prefetch_multiplier = 1
 # This is the core of specialized scaling. We can now run different workers
 # that listen to different queues (e.g., a GPU worker for 'recognition').
 app.conf.task_routes = {
-    'ocr.pipeline.*': {'queue': 'ocr_pipeline'},
+    # OCR pipeline stages get distinct queues so workers can be scaled per stage.
+    'ocr.pipeline.detect_lines': {'queue': 'ocr_lines'},
+    'ocr.pipeline.detect_words': {'queue': 'ocr_words'},
+    'ocr.pipeline.recognize_page': {'queue': 'ocr_recognize'},
+    'ocr.pipeline.finalize_and_notify': {'queue': 'ocr_recognize'},
+
+    # Dispatch/orchestration tasks stay on their existing queues.
     'app.worker.tasks.process_ocr_task': {'queue': 'dispatch'},
     'app.worker.tasks.send_webhook_result': {'queue': 'webhooks'},
 }
