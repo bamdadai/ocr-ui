@@ -103,6 +103,9 @@ class RecognitionService:
         self.device = config['device']
         self.batch_size = config['batch_size']
         self.min_conf = config['min_conf']
+        
+        # Initialize _input_method_used early to ensure it always exists
+        self._input_method_used = None
 
         # Get paddle_rec configuration - three required parameters
         paddle_config = config.get('paddle_rec', {})
@@ -207,9 +210,6 @@ class RecognitionService:
             logger.warning("recognition_service.warmup_failed", error=str(e))
 
         logger.debug("recognition_service.initialized")
-        
-        # Track which input method works (set on first successful prediction)
-        self._input_method_used = None
 
     def _predict_single(self, img: np.ndarray) -> Tuple[str, float]:
         """
@@ -334,7 +334,13 @@ class RecognitionService:
             return (text, float(confidence))
 
         except Exception as e:
-            logger.warning("recognition_service.prediction_failed", error=str(e))
+            # Use getattr to safely access _input_method_used in case it wasn't initialized
+            input_method = getattr(self, '_input_method_used', None)
+            logger.warning(
+                "recognition_service.prediction_failed",
+                error=str(e),
+                input_method=input_method
+            )
             return ("", 0.0)
 
     def preprocess(self, img: np.ndarray) -> np.ndarray:
