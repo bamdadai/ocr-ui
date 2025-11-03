@@ -69,6 +69,7 @@ services:
       dockerfile: Dockerfile.worker-cpu
       args:
         REQ_FILE: requirements/worker-cpu.txt
+    image: ocr_worker
     container_name: ocr_worker_dispatch
     restart: unless-stopped
     working_dir: /app
@@ -92,7 +93,7 @@ services:
       dockerfile: Dockerfile.worker-cpu
       args:
         REQ_FILE: requirements/worker-cpu.txt
-    image: ocr_worker_ocr
+    image: ocr_worker
     container_name: ocr_worker_ocr_lines
     restart: unless-stopped
     working_dir: /app
@@ -111,7 +112,7 @@ services:
       - ocr_network
 
   worker-ocr-words:
-    image: ocr_worker_ocr
+    image: ocr_worker
     container_name: ocr_worker_ocr_words
     restart: unless-stopped
     working_dir: /app
@@ -130,7 +131,7 @@ services:
       - ocr_network
 
   worker-ocr-recognize:
-    image: ocr_worker_ocr
+    image: ocr_worker
     container_name: ocr_worker_ocr_recognize
     restart: unless-stopped
     working_dir: /app
@@ -154,6 +155,7 @@ services:
       dockerfile: Dockerfile.worker-cpu
       args:
         REQ_FILE: requirements/worker-cpu.txt
+    image: ocr_worker
     container_name: ocr_worker_webhooks
     restart: unless-stopped
     working_dir: /app
