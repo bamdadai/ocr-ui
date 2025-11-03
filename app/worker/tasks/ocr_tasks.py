@@ -17,7 +17,7 @@ import sys
 from app.core.config import settings
 # DEFER heavy import to runtime to avoid ImportError in lightweight workers
 # from app.services.pipeline_service import PipelineService
-from app.utils.file_io import pdf_to_images
+from app.utils.file_io import pdf_to_images, bytes_to_image
 from app.worker.celery_app import app
 from app.worker.state_manager import StateManager
 from app.core.logging import correlation_id_var
@@ -76,101 +76,159 @@ def get_pipeline_service() -> 'PipelineService':
     
     return pipeline_singleton
 
+def _send_error_webhook_if_needed(request_id: str, error_message: str):
+    """Helper to send error webhook if webhook_url was provided for this request."""
+    try:
+        state = StateManager(request_id)
+        webhook_metadata = state.load_webhook_metadata()
+        webhook_url = webhook_metadata.get("webhook_url")
+        guid = webhook_metadata.get("guid") or request_id
+        
+        if webhook_url:
+            safe_task_id = request_id if request_id and request_id not in (None, "", "None", "null") else str(uuid.uuid4())
+            error_payload = {
+                "task_id": safe_task_id,
+                "guid": guid,
+                "text": base64.b64encode("".encode('utf-8')).decode('utf-8'),
+                "confidence": 0.0,
+                "status": "error",
+                "error": error_message
+            }
+            logger.debug(
+                "webhook.dispatch.error.page_task_failed",
+                guid=guid,
+                task_id=request_id,
+                webhook_url=webhook_url,
+                error=error_message
+            )
+            send_webhook_result.delay(
+                webhook_url,
+                error_payload,
+                correlation_id=correlation_id_var.get(),
+                task_id=safe_task_id
+            )
+    except Exception as webhook_exc:
+        # Don't let webhook errors mask the original error
+        logger.warning(
+            "webhook.dispatch.error.helper_failed",
+            request_id=request_id,
+            error=str(webhook_exc),
+            exc_info=True
+        )
+
 @app.task(name="ocr.pipeline.detect_lines", acks_late=True, bind=True)
 def detect_lines_task(self, request_id: str, page_index: int) -> int:
-    pipeline = get_pipeline_service()
-    state = StateManager(request_id)
-    image = state.load_page_image(page_index)
-    start_ns = perf_counter_ns()
-    telemetry = {"request_id": request_id, "page_index": page_index}
-    line_boxes = pipeline.detect_lines(image, telemetry=telemetry)
-    end_ns = perf_counter_ns()
-    duration_ns = end_ns - start_ns
-    state.save_line_boxes(page_index, line_boxes)
-    logger.debug("detect_lines.success", page=page_index + 1, lines_found=len(line_boxes))
-    log_stage_timing(
-        "detect_lines",
-        duration_ns=duration_ns,
-        request_id=request_id,
-        page_index=page_index,
-        start_ns=start_ns,
-        end_ns=end_ns,
-        extra={
-            "line_count": len(line_boxes),
-            "height": int(image.shape[0]),
-            "width": int(image.shape[1]),
-        },
-    )
-    return page_index
+    try:
+        pipeline = get_pipeline_service()
+        state = StateManager(request_id)
+        image = state.load_page_image(page_index)
+        start_ns = perf_counter_ns()
+        telemetry = {"request_id": request_id, "page_index": page_index}
+        line_boxes = pipeline.detect_lines(image, telemetry=telemetry)
+        end_ns = perf_counter_ns()
+        duration_ns = end_ns - start_ns
+        state.save_line_boxes(page_index, line_boxes)
+        logger.debug("detect_lines.success", page=page_index + 1, lines_found=len(line_boxes))
+        log_stage_timing(
+            "detect_lines",
+            duration_ns=duration_ns,
+            request_id=request_id,
+            page_index=page_index,
+            start_ns=start_ns,
+            end_ns=end_ns,
+            extra={
+                "line_count": len(line_boxes),
+                "height": int(image.shape[0]),
+                "width": int(image.shape[1]),
+            },
+        )
+        return page_index
+    except Exception as exc:
+        error_message = f"detect_lines failed on page {page_index + 1}: {str(exc)}"
+        logger.exception("detect_lines.failed", request_id=request_id, page_index=page_index, error=str(exc))
+        _send_error_webhook_if_needed(request_id, error_message)
+        raise
 
 @app.task(name="ocr.pipeline.detect_words", acks_late=True, bind=True)
 def detect_words_task(self, request_id: str, page_index: int) -> int:
-    pipeline = get_pipeline_service()
-    state = StateManager(request_id)
-    image = state.load_page_image(page_index)
-    line_boxes = state.load_line_boxes(page_index)
-    start_ns = perf_counter_ns()
-    telemetry = {"request_id": request_id, "page_index": page_index}
-    word_polygons = pipeline.detect_words(image, line_boxes, telemetry=telemetry)
-    end_ns = perf_counter_ns()
-    duration_ns = end_ns - start_ns
-    state.save_word_polygons(page_index, word_polygons)
-    logger.debug("detect_words.success", page=page_index + 1)
-    total_words = 0
-    if isinstance(word_polygons, list):
-        for group in word_polygons:
-            if isinstance(group, list):
-                total_words += len(group)
-    log_stage_timing(
-        "detect_words",
-        duration_ns=duration_ns,
-        request_id=request_id,
-        page_index=page_index,
-        start_ns=start_ns,
-        end_ns=end_ns,
-        extra={
-            "line_count": len(line_boxes),
-            "word_group_count": len(word_polygons) if isinstance(word_polygons, list) else None,
-            "word_count": total_words,
-        },
-    )
-    return page_index
+    try:
+        pipeline = get_pipeline_service()
+        state = StateManager(request_id)
+        image = state.load_page_image(page_index)
+        line_boxes = state.load_line_boxes(page_index)
+        start_ns = perf_counter_ns()
+        telemetry = {"request_id": request_id, "page_index": page_index}
+        word_polygons = pipeline.detect_words(image, line_boxes, telemetry=telemetry)
+        end_ns = perf_counter_ns()
+        duration_ns = end_ns - start_ns
+        state.save_word_polygons(page_index, word_polygons)
+        logger.debug("detect_words.success", page=page_index + 1)
+        total_words = 0
+        if isinstance(word_polygons, list):
+            for group in word_polygons:
+                if isinstance(group, list):
+                    total_words += len(group)
+        log_stage_timing(
+            "detect_words",
+            duration_ns=duration_ns,
+            request_id=request_id,
+            page_index=page_index,
+            start_ns=start_ns,
+            end_ns=end_ns,
+            extra={
+                "line_count": len(line_boxes),
+                "word_group_count": len(word_polygons) if isinstance(word_polygons, list) else None,
+                "word_count": total_words,
+            },
+        )
+        return page_index
+    except Exception as exc:
+        error_message = f"detect_words failed on page {page_index + 1}: {str(exc)}"
+        logger.exception("detect_words.failed", request_id=request_id, page_index=page_index, error=str(exc))
+        _send_error_webhook_if_needed(request_id, error_message)
+        raise
 
 @app.task(name="ocr.pipeline.recognize_page", acks_late=True, bind=True)
 def recognize_page_task(self, request_id: str, page_index: int) -> dict:
-    pipeline = get_pipeline_service()
-    state = StateManager(request_id)
-    image = state.load_page_image(page_index)
-    # Create page_id for debug output
-    page_id = f"page{page_index}"
-    line_boxes = state.load_line_boxes(page_index)
-    word_polygons = state.load_word_polygons(page_index)
-    start_ns = perf_counter_ns()
-    telemetry = {"request_id": request_id, "page_index": page_index}
-    full_text, confidence = pipeline.recognize_page(
-        image,
-        line_boxes,
-        word_polygons,
-        page_id=page_id,
-        telemetry=telemetry
-    )
-    end_ns = perf_counter_ns()
-    duration_ns = end_ns - start_ns
-    state.save_page_result(page_index, full_text, confidence)
-    logger.debug("recognize_page.success", page=page_index + 1, confidence=confidence)
-    log_stage_timing(
-        "recognize_page",
-        duration_ns=duration_ns,
-        request_id=request_id,
-        page_index=page_index,
-        start_ns=start_ns,
-        end_ns=end_ns,
-        extra={
-            "char_count": len(full_text) if isinstance(full_text, str) else None,
-            "confidence": confidence,
-        },
-    )
-    return {"page_index": page_index}
+    try:
+        pipeline = get_pipeline_service()
+        state = StateManager(request_id)
+        image = state.load_page_image(page_index)
+        # Create page_id for debug output
+        page_id = f"page{page_index}"
+        line_boxes = state.load_line_boxes(page_index)
+        word_polygons = state.load_word_polygons(page_index)
+        start_ns = perf_counter_ns()
+        telemetry = {"request_id": request_id, "page_index": page_index}
+        full_text, confidence = pipeline.recognize_page(
+            image,
+            line_boxes,
+            word_polygons,
+            page_id=page_id,
+            telemetry=telemetry
+        )
+        end_ns = perf_counter_ns()
+        duration_ns = end_ns - start_ns
+        state.save_page_result(page_index, full_text, confidence)
+        logger.debug("recognize_page.success", page=page_index + 1, confidence=confidence)
+        log_stage_timing(
+            "recognize_page",
+            duration_ns=duration_ns,
+            request_id=request_id,
+            page_index=page_index,
+            start_ns=start_ns,
+            end_ns=end_ns,
+            extra={
+                "char_count": len(full_text) if isinstance(full_text, str) else None,
+                "confidence": confidence,
+            },
+        )
+        return {"page_index": page_index}
+    except Exception as exc:
+        error_message = f"recognize_page failed on page {page_index + 1}: {str(exc)}"
+        logger.exception("recognize_page.failed", request_id=request_id, page_index=page_index, error=str(exc))
+        _send_error_webhook_if_needed(request_id, error_message)
+        raise
 
 @app.task(name='app.worker.tasks.send_webhook_result', bind=True, autoretry_for=(RequestException,), retry_kwargs={"max_retries": 2}, default_retry_delay=5)
 def send_webhook_result(self, webhook_url: str, payload: dict, **kwargs):
@@ -360,26 +418,11 @@ def process_ocr_task(
 
     guid = metadata.get('guid') or request_id  # Uses request_id if guid is None or missing
 
-    # Normalise and validate the declared file format against the allow-list.
-    declared_format = (metadata.get('format') or metadata.get('file_extension') or "").lower()
-    if declared_format and not declared_format.startswith("."):
-        declared_format = f".{declared_format}"
-
-    if not declared_format:
-        filename = metadata.get("filename") or ""
-        declared_format = Path(filename).suffix.lower()
-
-    if declared_format not in ALLOWED_FILE_EXTENSIONS:
-        logger.error(
-            "ocr_task.unsupported_file_format",
-            guid=guid,
-            declared_format=declared_format,
-            allowed_extensions=list(ALLOWED_FILE_EXTENSIONS)
-        )
-        raise ValueError(f"Unsupported file format: {declared_format or 'unknown'}")
+    # Store webhook metadata for error handlers in page-level tasks
+    state.save_webhook_metadata(webhook_url, guid)
 
     correlation_id_var.set(correlation_context)
-    logger.debug("ocr_task.received", guid=guid, task_id=request_id, file_format=declared_format)
+    logger.debug("ocr_task.received", guid=guid, task_id=request_id)
 
     logger.debug(
         "ocr_task.payload_mode",
@@ -389,6 +432,26 @@ def process_ocr_task(
     )
 
     try:
+        # Normalise and validate the declared file format against the allow-list.
+        # Moved inside try block so format validation errors trigger webhook callbacks.
+        declared_format = (metadata.get('format') or metadata.get('file_extension') or "").lower()
+        if declared_format and not declared_format.startswith("."):
+            declared_format = f".{declared_format}"
+
+        if not declared_format:
+            filename = metadata.get("filename") or ""
+            declared_format = Path(filename).suffix.lower()
+
+        if declared_format not in ALLOWED_FILE_EXTENSIONS:
+            logger.error(
+                "ocr_task.unsupported_file_format",
+                guid=guid,
+                declared_format=declared_format,
+                allowed_extensions=list(ALLOWED_FILE_EXTENSIONS)
+            )
+            raise ValueError(f"Unsupported file format: {declared_format or 'unknown'}")
+        
+        logger.debug("ocr_task.format_validated", guid=guid, file_format=declared_format)
         # Retrieve the original upload payload.
         if staged_upload or file_content is None:
             try:
@@ -418,15 +481,7 @@ def process_ocr_task(
         if is_pdf:
             images = pdf_to_images(file_bytes)
         else:
-            image_array = np.frombuffer(file_bytes, np.uint8)
-            decoded_image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
-            if decoded_image is None:
-                logger.error(
-                    "ocr_task.image_decode_failed",
-                    guid=guid,
-                    declared_format=declared_format
-                )
-                raise ValueError("Failed to decode file as an image. The file may be corrupt or in an unsupported format.")
+            decoded_image = bytes_to_image(file_bytes)
             images = [decoded_image]
         del file_bytes
 
@@ -450,6 +505,31 @@ def process_ocr_task(
         page_indices = list(range(len(images)))
         if not page_indices:
             logger.warning("ocr_task.no_pages_found", guid=guid)
+            # Send webhook if provided when no pages are produced (empty/unreadable document)
+            if webhook_url:
+                safe_task_id = request_id if request_id and request_id not in (None, "", "None", "null") else str(uuid.uuid4())
+                error_message = "No pages found in document. The file may be empty or unreadable."
+                error_payload = {
+                    "task_id": safe_task_id,
+                    "guid": guid,
+                    "text": base64.b64encode("".encode('utf-8')).decode('utf-8'),
+                    "confidence": 0.0,
+                    "status": "error",
+                    "error": error_message
+                }
+                logger.debug(
+                    "webhook.dispatch.error.no_pages",
+                    guid=guid,
+                    task_id=request_id,
+                    webhook_url=webhook_url,
+                    error=error_message
+                )
+                send_webhook_result.delay(
+                    webhook_url,
+                    error_payload,
+                    correlation_id=correlation_id_var.get(),
+                    task_id=safe_task_id
+                )
             return None
 
         line_stage = group(
@@ -534,15 +614,48 @@ def finalize_and_notify_task(page_results: list, request_id: str, guid: str, web
     
     state = StateManager(request_id)
     page_indices: list[int] = []
+    
+    # Log what we received for debugging
+    logger.debug(
+        "finalize.page_results_received",
+        guid=guid,
+        result_type=type(page_results).__name__,
+        result_repr=str(page_results)[:200] if page_results else None
+    )
+    
     if isinstance(page_results, (list, tuple)):
         for res in page_results:
             if isinstance(res, dict) and 'page_index' in res:
                 page_indices.append(int(res['page_index']))
+            elif isinstance(res, dict):
+                logger.debug(
+                    "finalize.page_result_missing_index",
+                    guid=guid,
+                    result_keys=list(res.keys()) if res else []
+                )
+    elif isinstance(page_results, dict):
+        # Handle case where page_results is a single dict instead of a list
+        # This can happen with single-page documents or Celery serialization quirks
+        if 'page_index' in page_results:
+            page_indices.append(int(page_results['page_index']))
+            logger.debug(
+                "finalize.page_results_single_dict",
+                guid=guid,
+                page_index=page_results['page_index']
+            )
+        else:
+            logger.warning(
+                "finalize.page_results_dict_missing_page_index",
+                guid=guid,
+                result_type=type(page_results).__name__,
+                keys=list(page_results.keys()) if page_results else []
+            )
     else:
         logger.warning(
             "finalize.unexpected_page_results_type",
             guid=guid,
-            result_type=type(page_results).__name__
+            result_type=type(page_results).__name__,
+            result_repr=str(page_results)[:200] if page_results else None
         )
 
     if not page_indices:
