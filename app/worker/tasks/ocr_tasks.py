@@ -460,9 +460,30 @@ def process_ocr_task(
         logger.debug("ocr_task.workflow_dispatched", guid=guid, workflow_task_id=async_result.id)
         return async_result.id
     except Exception as e:
-        logger.exception("ocr_task.initialization_failed", guid=guid, error=str(e))
+        error_message = str(e)
+        logger.exception("ocr_task.initialization_failed", guid=guid, error=error_message)
         # This makes the task fail, so the frontend polling will receive a 'FAILURE' status.
-        self.update_state(state='FAILURE', meta={'error': str(e)})
+        self.update_state(state='FAILURE', meta={'error': error_message})
+        
+        # Send error webhook if webhook_url was provided
+        if webhook_url:
+            error_payload = {
+                "task_id": request_id,
+                "guid": guid,
+                "text": base64.b64encode("".encode('utf-8')).decode('utf-8'),  # Empty base64-encoded text on error
+                "confidence": 0.0,
+                "status": "error",
+                "error": error_message
+            }
+            logger.debug(
+                "webhook.dispatch.error",
+                guid=guid,
+                task_id=request_id,
+                webhook_url=webhook_url,
+                error=error_message
+            )
+            send_webhook_result.delay(webhook_url, error_payload, correlation_id=correlation_id_var.get())
+        
         raise
     finally:
         if staged_upload:
